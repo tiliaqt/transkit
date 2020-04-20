@@ -136,6 +136,8 @@ def startPlot():
     plt.ylabel('Estradiol (pg/mL)')
     plt.grid(which='major', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
     plt.grid(which='minor', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.2)
+    plt.gca().set_axisbelow(True)
+    plt.gca().set_zorder(0)
 
 # Plot the continuous, simulated curve of blood levels for a series of
 # injections, along with associated blood level measurements if they exist.
