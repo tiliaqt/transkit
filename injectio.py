@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 import math
 import numpy as np
 import pandas as pd
@@ -56,19 +57,53 @@ def timeDeltaToDays(td):
     return td.total_seconds()/60.0/60.0/24.0
 
 
-# Reformats a numpy ndarray[object] of the form:
-#
-#   [
-#     [ "date str", dose float, dose func ],
-#     [ "date str", dose float, dose func ],
-#     ...
-#   ]
-#
-# into a Pandas Series of (dose float, dose func) tuples indexed by DateTime.
-#
-# This allows the user-typed input array to look nice and be easy to work with.
 def createInjections(inj_array):
+    """Create a Series of injections for use in computation.
+
+    This reformats a numpy ndarray[object] of the form:
+
+    [
+        [ "date str", dose float, dose func ],
+        [ "date str", dose float, dose func ],
+        ...
+    ]
+
+    into a Pandas Series of (dose float, dose func) tuples indexed by DateTime.
+    This allows the user-typed input array to look nice and be easy to work with."""
     return pd.Series([tuple(i) for i in inj_array[:,1:3]], index=pd.to_datetime(inj_array[:,0]))
+
+def rep_from(inj, n, freq):
+    """Repeats injections with cycling frequencies from a given first injection.
+
+    This is used for composing and generating injections for use in the
+    array passed to createInjections()."""
+    if isinstance(freq, str):
+        freq = (freq,)
+
+    offsets = [pd.tseries.frequencies.to_offset(f) for f in (math.floor(n / len(freq)) * freq)[0:n]]
+    inj_dates = [pd.to_datetime(inj[0])]
+    for o in offsets:
+        inj_dates.append(inj_dates[-1] + o)
+
+    return [*zip(inj_dates, n*[inj[1]], n*[inj[2]])]
+
+def rep_from_dose(date, dose, ef, n, freq):
+    """Repeats injections with cycling doses and frequencies from a given first injection.
+
+    This is used for composing and generating injections for use in the
+    array passed to createInjections()."""
+    if not isinstance(dose, Iterable):
+        dose = (dose,)
+    if isinstance(freq, str) or not isinstance(freq, Iterable):
+        freq = (freq,)
+
+    offsets = [pd.tseries.frequencies.to_offset(f) for f in (math.floor(n / len(freq)) * freq)[0:n]]
+    inj_dates = [pd.to_datetime(date)]
+    for o in offsets:
+        inj_dates.append(inj_dates[-1] + o)
+
+    doses = [d for d in (math.floor(n / len(dose)) * dose)[0:n]]
+    return [*zip(inj_dates, doses, n*[ef])]
 
 # Create an injections Series for a particular injection function that cycles
 # monotonically for the desired length of time.
@@ -152,8 +187,8 @@ def startPlot():
 #                 values indexed by DateTime.
 #   label         Matplotlib label to attach to the curve. [String]
 def plotInjections(injections,
-                   sample_freq,
                    measurements=pd.Series(dtype=np.float64),
+                   sample_freq='1H',
                    label=''):
     e_levels = calcInjections(zeroLevelsFromInjections(injections, sample_freq),
                               injections)
@@ -217,7 +252,7 @@ def plotInjections(injections,
 def plotInjectionFrequencies(ef, sim_time, sim_freq, inj_freqs):
     for freq in inj_freqs:
         plotInjections(createInjectionsCycle(ef, sim_time, pd.offsets.Nano(freq*24.0*60.0*60.0*1e9)),
-                       sim_freq,
+                       sample_freq=sim_freq,
                        label=freq)
 
     plt.legend(title='Injection frequency\n(days)')
