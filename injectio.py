@@ -177,17 +177,17 @@ def startPlot():
 # Plot the continuous, simulated curve of blood levels for a series of
 # injections, along with associated blood level measurements if they exist.
 #
-#   injections    Injections to plot, represented as a Pandas Series of
-#                 (dose [mg], ef [function]) tuples indexed by DateTime.
-#                 See createInjections(...).
-#   sample_freq   Frequency at which the calculated continuous curve is sampled
-#                 at. [Pandas frequency thing]
-#   measurements  (Optional) Actual blood level measurements to plot alongside
-#                 the simulated curve, represented as a Pandas series of pg/mL
-#                 values indexed by DateTime.
-#   label         Matplotlib label to attach to the curve. [String]
+#   injections              Injections to plot, represented as a Pandas Series of
+#                           (dose [mg], ef [function]) tuples indexed by DateTime.
+#                           See createInjections(...).
+#   sample_freq             Frequency at which the calculated continuous curve is sampled
+#                           at. [Pandas frequency thing]
+#   estradiol_measurements  (Optional) Actual blood level measurements to plot alongside
+#                           the simulated curve, represented as a Pandas series of pg/mL
+#                           values indexed by DateTime.
+#   label                   Matplotlib label to attach to the curve. [String]
 def plotInjections(injections,
-                   measurements=pd.Series(dtype=np.float64),
+                   estradiol_measurements=pd.Series(dtype=np.float64),
                    sample_freq='1H',
                    label=''):
     e_levels = calcInjections(zeroLevelsFromInjections(injections, sample_freq),
@@ -195,7 +195,7 @@ def plotInjections(injections,
     levels_at_injection = calcInjections(zeroLevelsAtInjections(injections),
                                          injections)[0:-1]
     levels_at_measurements = calcInjections(
-        pd.Series(np.zeros(len(measurements)), index=measurements.index),
+        pd.Series(np.zeros(len(estradiol_measurements)), index=estradiol_measurements.index),
         injections)
     
     # Plot with relative x-axis times so the labels are more readable
@@ -223,13 +223,13 @@ def plotInjections(injections,
                 zorder=2)
     
     # Plot measured blood levels
-    plt.plot([timeDeltaToDays(d - e_levels.index[0]) for d in measurements.index],
-             measurements.values,
+    plt.plot([timeDeltaToDays(d - e_levels.index[0]) for d in estradiol_measurements.index],
+             estradiol_measurementss.values,
              'o')
 
     # Draw a vertical line from the measured points to the simulated curve
     measurements_points = [
-        (timeDeltaToDays(T - e_levels.index[0]), d) for T,d in measurements.items()]
+        (timeDeltaToDays(T - e_levels.index[0]), d) for T,d in estradiol_measurements.items()]
     levels_at_measurements_points = [
         (timeDeltaToDays(T - e_levels.index[0]), d) for T,d in levels_at_measurements.items()]
     
