@@ -63,14 +63,29 @@ def createInjections(inj_array):
     This reformats a numpy ndarray[object] of the form:
 
     [
-        [ "date str", dose float, dose func ],
-        [ "date str", dose float, dose func ],
+        [ "date str", dose float, "injectable str" ],
+        [ "date str", dose float, "injectable str" ],
         ...
     ]
 
-    into a Pandas Series of (dose float, dose func) tuples indexed by DateTime.
+    into a Pandas Series of (dose float, "injectable str") tuples indexed by DateTime.
     This allows the user-typed input array to look nice and be easy to work with."""
     return pd.Series([tuple(i) for i in inj_array[:,1:3]], index=pd.to_datetime(inj_array[:,0]))
+
+def createMeasurements(measurements_array):
+    """Create a Series of measurements for use in computation.
+
+    This reformats a numpy ndarray[object] of the form:
+
+    [
+        [ "date str", measurement float, "method str" ],
+        [ "date str", measurement float, "method str" ],
+        ...
+    ]
+
+    into a Pandas Series of (measurement float, "method str") tuples indexed by DateTime.
+    This allows the user-typed input array to look nice and be easy to work with."""
+    return pd.Series(measurements_array[:,1], index=pd.to_datetime(measurements_array[:,0]))
 
 def rep_from(inj, n, freq):
     """Repeats injections with cycling frequencies from a given first injection.
@@ -108,7 +123,7 @@ def rep_from_dose(date, dose, ef, n, freq):
 # Create an injections Series for a particular injection function that cycles
 # monotonically for the desired length of time.
 #
-#   ef        function
+#   ef        injectable
 #   sim_time  length of simulation [Days]
 #   inj_freq  injection every inj_freq [Pandas frequency thing]
 def createInjectionsCycle(ef, sim_time, inj_freq):
@@ -141,9 +156,10 @@ def zeroLevelsAtInjections(injections):
 # single injection. It's not numeric integration because the function f already
 # returns the total blood level contribution of a single injection depot, and
 # each depot contributes linearly to the total systemic blood concentration.
-def calcInjections(zero_levels, injections):
+def calcInjections(zero_levels, injections, injectables):
     for inj_date, inj in injections.items():
-        (inj_ratio, inj_ef) = inj
+        (inj_dose, inj_ef) = inj
+        inj_ef = injectables[inj_ef]
         
         # If the function has a specified domain, we can use that to avoid
         # doing work we don't need to. If it doesn't have a specified domain,
@@ -159,10 +175,17 @@ def calcInjections(zero_levels, injections):
             levels_range = zero_levels.index
             
         for T in levels_range:
-            zero_levels[T] += inj_ratio * inj_ef(timeDeltaToDays(T - inj_date))
+            zero_levels[T] += inj_dose * inj_ef(timeDeltaToDays(T - inj_date))
 
     return zero_levels
 
+
+def calibrateInjections(injections, injectables, estradiol_measurements):
+    levels_at_measurements = calcInjections(
+        pd.Series(np.zeros(len(estradiol_measurements)), index=estradiol_measurements.index),
+        injections,
+        injectables)
+    return (estradiol_measurements / levels_at_measurements).mean()
 
 def startPlot():
     plt.rcParams['figure.figsize'] = [15, 12]
@@ -187,21 +210,33 @@ def startPlot():
 #                           values indexed by DateTime.
 #   label                   Matplotlib label to attach to the curve. [String]
 def plotInjections(injections,
+                   injectables,
                    estradiol_measurements=pd.Series(dtype=np.float64),
+                   #calibration_factor=1.0,
                    sample_freq='1H',
                    label=''):
-    e_levels = calcInjections(zeroLevelsFromInjections(injections, sample_freq),
-                              injections)
-    levels_at_injection = calcInjections(zeroLevelsAtInjections(injections),
-                                         injections)[0:-1]
+    # Easy way to display a vertical line at the current time
+    estradiol_measurements = pd.concat([
+        estradiol_measurements,
+        pd.Series([-10.0], index=[pd.Timestamp.now()])])
+    
+    e_levels = calcInjections(
+        zeroLevelsFromInjections(injections, sample_freq),
+        injections,
+        injectables)
+    levels_at_injection = calcInjections(
+        zeroLevelsAtInjections(injections),
+        injections,
+        injectables)[0:-1]
     levels_at_measurements = calcInjections(
         pd.Series(np.zeros(len(estradiol_measurements)), index=estradiol_measurements.index),
-        injections)
+        injections,
+        injectables)
     
     # Plot with relative x-axis times so the labels are more readable
     sim_time = timeDeltaToDays(e_levels.index[-1] - e_levels.index[0])
     plt.xlim((0.0, sim_time))
-    plt.xticks(np.arange(0.0, sim_time+1.0, 3.0), rotation=-45)
+    plt.xticks(np.arange(0.0, sim_time+1.0, 7.0), rotation=-45)
     plt.gca().xaxis.set_minor_locator(mticker.AutoMinorLocator(n=3))
     
     # Plot simulated curve
@@ -224,7 +259,7 @@ def plotInjections(injections,
     
     # Plot measured blood levels
     plt.plot([timeDeltaToDays(d - e_levels.index[0]) for d in estradiol_measurements.index],
-             estradiol_measurementss.values,
+             estradiol_measurements.values,
              'o')
 
     # Draw a vertical line from the measured points to the simulated curve
@@ -250,10 +285,16 @@ def plotInjections(injections,
 #   sim_freq   Resolution of simulaion [Pandas frequency thing]
 #   inj_freqs  List of period curves to plot [Days]
 def plotInjectionFrequencies(ef, sim_time, sim_freq, inj_freqs):
+    injectables = {"ef": ef}
     for freq in inj_freqs:
-        plotInjections(createInjectionsCycle(ef, sim_time, pd.offsets.Nano(freq*24.0*60.0*60.0*1e9)),
-                       sample_freq=sim_freq,
-                       label=freq)
+        plotInjections(
+            createInjectionsCycle(
+                "ef",
+                sim_time,
+                pd.offsets.Nano(freq*24.0*60.0*60.0*1e9)),
+            injectables,
+            sample_freq=sim_freq,
+            label=freq)
 
     plt.legend(title='Injection frequency\n(days)')
     plt.show()
