@@ -190,7 +190,6 @@ def calibrateInjections(injections, injectables, estradiol_measurements):
 def startPlot():
     plt.rcParams['figure.figsize'] = [15, 12]
     plt.figure(dpi=150)
-    plt.xlabel('Time (days)')
     plt.ylabel('Estradiol (pg/mL)')
     plt.grid(which='major', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
     plt.grid(which='minor', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.2)
@@ -233,50 +232,67 @@ def plotInjections(injections,
         injections,
         injectables)
     
-    # Plot with relative x-axis times so the labels are more readable
-    sim_time = timeDeltaToDays(e_levels.index[-1] - e_levels.index[0])
-    plt.xlim((0.0, sim_time))
-    plt.xticks(np.arange(0.0, sim_time+1.0, 7.0), rotation=-45)
-    plt.gca().xaxis.set_minor_locator(mticker.AutoMinorLocator(n=3))
+    # The primary axis displays absolute date.
+    ax_pri = plt.gca()
+    ax_pri.set_xlabel('Date')
+    ax_pri.xaxis_date()
+    
+    # matplotlib uses *FLOAT DAYS SINCE EPOCH* to represent dates.
+    # set_xlim can take a pd DateTime, but converts it to that ^
+    ax_pri.set_xlim((mdates.date2num(e_levels.index[0]),
+                     mdates.date2num(e_levels.index[-1])))
+    
+    # The secondary axis displays relative date in days.
+    def mdate2reldays(X):
+        return np.array([d - mdates.date2num(e_levels.index[0]) for d in X])
+    def reldays2mdate(X):
+        return np.array([mdates.date2num(e_levels.index[0]) + d for d in X])
+    ax_sec = ax_pri.secondary_xaxis('top', functions=(mdate2reldays, reldays2mdate))
+    ax_sec.set_xlabel("Time (days)")
+    ax_sec.set_xticks(np.arange(0.0,
+                                timeDeltaToDays(e_levels.index[-1] - e_levels.index[0]) + 1.0,
+                                7.0))
+    ax_sec.tick_params(axis='x', labelrotation=45)
+    ax_sec.xaxis.set_minor_locator(mticker.AutoMinorLocator(n=3))
     
     # Plot simulated curve
-    plt.plot([timeDeltaToDays(d - e_levels.index[0]) for d in e_levels.index],
-             e_levels.values,
-             label=label,
-             zorder=1)
+    ax_pri.plot(e_levels.index,
+                e_levels.values,
+                label=label,
+                zorder=1)
     
     # Plot moments of injection as dose-scaled points on top of the simulated curce
     doses         = [dose for dose,ef in injections.values[0:-1]]
     norm_doses    = Normalize(vmin=-1.0*max(doses), vmax=max(doses)+0.2)(doses)
     marker_sizes  = [(9.0*dose+2.0)**2 for dose in norm_doses]
     marker_colors = [(dose, 1.0-dose, 0.7, 1.0) for dose in norm_doses]
-    plt.scatter([timeDeltaToDays(d - e_levels.index[0]) for d in levels_at_injection.index],
-                levels_at_injection.values,
-                s=marker_sizes,
-                c=marker_colors,
-                marker='2',
-                zorder=2)
+    ax_pri.scatter(levels_at_injection.index,
+                   levels_at_injection.values,
+                   s=marker_sizes,
+                   c=marker_colors,
+                   marker='2',
+                   zorder=2)
     
     # Plot measured blood levels
-    plt.plot([timeDeltaToDays(d - e_levels.index[0]) for d in estradiol_measurements.index],
-             estradiol_measurements.values,
-             'o')
-
-    # Draw a vertical line from the measured points to the simulated curve
-    measurements_points = [
-        (timeDeltaToDays(T - e_levels.index[0]), d) for T,d in estradiol_measurements.items()]
-    levels_at_measurements_points = [
-        (timeDeltaToDays(T - e_levels.index[0]), d) for T,d in levels_at_measurements.items()]
+    ax_pri.plot(estradiol_measurements.index,
+                estradiol_measurements.values,
+                'o')
     
     #errors = measurements - levels_at_measurements
-    #plt.errorbar([timeDeltaToDays(d - e_levels.index[0]) for d in levels_at_measurements.index],
-    #             levels_at_measurements.values,
-    #             yerr=errors.values,
-    #             color=(0.5, 0.4, 0.4, 0.5), capsize=4.0, fmt='none')
+    #ax_pri.errorbar(levels_at_measurements.index,
+    #                levels_at_measurements.values,
+    #                yerr=errors.values,
+    #                color=(0.5, 0.4, 0.4, 0.5), capsize=4.0, fmt='none')
 
+    # Draw vertical lines from the measured points to the simulated curve
+    measurements_points = [
+        (mdates.date2num(d), m) for d,m in estradiol_measurements.items()]
+    levels_at_measurements_points = [
+        (mdates.date2num(d), m) for d,m in levels_at_measurements.items()]
+    
     lines = list(zip(measurements_points, levels_at_measurements_points))
     lc = mc.LineCollection(lines, linestyles=(0, (2, 3)), colors=(0.7, 0.3, 0.3, 1.0), zorder=3)
-    plt.gca().add_collection(lc);
+    ax_pri.add_collection(lc);
 
 # Plot multiple injection curves for a range of injection frequencies.
 #
