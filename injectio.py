@@ -191,8 +191,6 @@ def startPlot():
     plt.rcParams['figure.figsize'] = [15, 12]
     plt.figure(dpi=150)
     plt.ylabel('Estradiol (pg/mL)')
-    plt.grid(which='major', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
-    plt.grid(which='minor', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.2)
     plt.gca().set_axisbelow(True)
     plt.gca().set_zorder(0)
 
@@ -242,6 +240,17 @@ def plotInjections(injections,
     ax_pri.set_xlim((mdates.date2num(e_levels.index[0]),
                      mdates.date2num(e_levels.index[-1])))
     
+    ax_pri.xaxis.set_major_locator(mdates.MonthLocator())
+    ax_pri.xaxis.set_major_formatter(mdates.DateFormatter("1%Y.%b.%d.%H%M"))
+    ax_pri.xaxis.set_minor_locator(mdates.DayLocator(bymonthday=range(1, 32, 3)))
+    ax_pri.xaxis.set_minor_formatter(mdates.DateFormatter("%d"))
+    ax_pri.tick_params(which='major', axis='x', labelrotation=-45, pad=12)
+    plt.setp(ax_pri.xaxis.get_majorticklabels(), ha="left")
+    ax_pri.tick_params(which='minor', axis='x', labelrotation=-90, labelsize=6)
+    
+    ax_pri.grid(which='major', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
+    ax_pri.grid(which='minor', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.2)
+    
     # The secondary axis displays relative date in days.
     def mdate2reldays(X):
         return np.array([d - mdates.date2num(e_levels.index[0]) for d in X])
@@ -251,9 +260,9 @@ def plotInjections(injections,
     ax_sec.set_xlabel("Time (days)")
     ax_sec.set_xticks(np.arange(0.0,
                                 timeDeltaToDays(e_levels.index[-1] - e_levels.index[0]) + 1.0,
-                                7.0))
-    ax_sec.tick_params(axis='x', labelrotation=45)
+                                9.0))
     ax_sec.xaxis.set_minor_locator(mticker.AutoMinorLocator(n=3))
+    ax_sec.tick_params(axis='x', labelrotation=45)
     
     # Plot simulated curve
     ax_pri.plot(e_levels.index,
