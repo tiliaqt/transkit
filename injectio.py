@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections.abc import Iterable
 import math
 import numpy as np
@@ -11,6 +12,16 @@ from matplotlib import dates as mdates
 from matplotlib import collections as mc
 from matplotlib import ticker as mticker
 from matplotlib.colors import Normalize
+
+
+injectables_markers = defaultdict(lambda: "2", {
+    "ec": "2",
+    "ev": "1",
+    "pill-oral": ".",
+    "pill-subl": ".",
+    "pill-bucc": ".",
+})
+
 
 # Converts an ndarray of flaot(Day),float(pg/mL) pairs into an interpolated function f:
 #   val [pg/mL] = f(time_since_injection [Days])
@@ -302,17 +313,22 @@ def plotInjections(injections,
                 label=label,
                 zorder=1)
     
-    # Plot moments of injection as dose-scaled points on top of the simulated curce
-    doses         = injections["dose"].values[0:-1]
-    norm_doses    = Normalize(vmin=-1.0*max(doses), vmax=max(doses)+0.2)(doses)
-    marker_sizes  = [(9.0*dose+2.0)**2 for dose in norm_doses]
-    marker_colors = [(dose, 1.0-dose, 0.7, 1.0) for dose in norm_doses]
-    ax_pri.scatter(levels_at_injections.index,
-                   levels_at_injections.values,
-                   s=marker_sizes,
-                   c=marker_colors,
-                   marker='2',
-                   zorder=2)
+    # Plot moments of injection as dose-scaled points on top of the simulated
+    # curve, independently for each kind of injectable.
+    for injectable, group in injections[0:-1].groupby(by="injectable"):
+        doses         = group["dose"].values
+        norm_doses    = Normalize(vmin=-1.0*max(doses), vmax=max(doses)+0.2)(doses)
+        marker_sizes  = [(9.0*dose+2.0)**2 for dose in norm_doses]
+        marker_colors = [(dose, 1.0-dose, 0.7, 1.0) for dose in norm_doses]
+        levels_at_group = levels_at_injections[group.index]
+        ax_pri.scatter(levels_at_group.index,
+                       levels_at_group.values,
+                       s=marker_sizes,
+                       c=marker_colors,
+                       marker=injectables_markers[injectable],
+                       zorder=2,
+                       label=f"{injectable} inj")
+    ax_pri.legend()
     
     # Plot measured blood levels
     ax_pri.plot(estradiol_measurements.index,
@@ -352,10 +368,10 @@ def plotInjectionFrequencies(ef, sim_time, sim_freq, inj_freqs):
             createInjectionsCycle("ef", sim_time, freq),
             injectables,
             sample_freq=sim_freq,
-            label=freq)
+            label=f"{freq} freq")
 
     plt.gca().set_xlim(
         plt.gca().get_xlim()[0],
         pd.to_datetime(sim_time, unit='D'))
-    plt.legend(title='Injection frequency')
+    plt.legend()
     plt.show()
