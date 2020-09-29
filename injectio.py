@@ -58,7 +58,8 @@ def timeDeltaToDays(td):
 
 
 def createInjections(inj_array):
-    """Create a Series of injections for use in computation.
+    """
+    Create a DataFrame of injections for use in computation.
 
     This reformats a numpy ndarray[object] of the form:
 
@@ -68,12 +69,16 @@ def createInjections(inj_array):
         ...
     ]
 
-    into a Pandas Series of (dose float, "injectable str") tuples indexed by DateTime.
-    This allows the user-typed input array to look nice and be easy to work with."""
-    return pd.Series([tuple(i) for i in inj_array[:,1:3]], index=pd.to_datetime(inj_array[:,0]))
+    into a Pandas DataFrame with the date as index, and dose and injectable as
+    columns. This allows the user-typed input array to look nice and be easy
+    to work with. Date values can be anything parsable by pd.to_datetime(...)."""
+    return pd.DataFrame(inj_array[:,1:3],
+                        index=pd.to_datetime(inj_array[:,0]),
+                        columns=["dose", "injectable"])
 
 def createMeasurements(measurements_array):
-    """Create a Series of measurements for use in computation.
+    """
+    Create a DataFrame of measurements for use in computation.
 
     This reformats a numpy ndarray[object] of the form:
 
@@ -83,15 +88,35 @@ def createMeasurements(measurements_array):
         ...
     ]
 
-    into a Pandas Series of (measurement float, "method str") tuples indexed by DateTime.
-    This allows the user-typed input array to look nice and be easy to work with."""
-    return pd.Series(measurements_array[:,1], index=pd.to_datetime(measurements_array[:,0]))
+    into a Pandas DataFrame with the date as index, and measurement value and
+    method as columns. This allows the user-typed input array to look nice and
+    be easy to work with. Date values can be anything parsable by
+    pd.to_datetime(...)."""
+    return pd.DataFrame(measurements_array[:,1:3],
+                       index=pd.to_datetime(measurements_array[:,0]),
+                       columns=["value", "method"])
+
+def createInjectionsCycle(ef, sim_time, inj_freq):
+    """
+    Creates a DataFrame of injections for a particular injectable that cycles
+    monotonically for the desired length of time.
+
+    ef        injectable
+    sim_time  length of simulation [Days]
+    inj_freq  injection every inj_freq [Pandas frequency thing]"""
+
+    n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0)) + 1
+    injs = createInjections(np.array(rep_from([0, 1.0, ef], n=n_inj, freq=inj_freq)))
+    injs["dose"][-1] = 0
+    return injs
 
 def rep_from(inj, n, freq):
-    """Repeats injections with cycling frequencies from a given first injection.
+    """
+    Repeats injections with cycling frequencies from a given first injection.
+    Returns a list of lists.
 
     This is used for composing and generating injections for use in the
-    array passed to createInjections()."""
+    ndarray passed to createInjections()."""
     if isinstance(freq, str):
         freq = (freq,)
 
@@ -103,10 +128,12 @@ def rep_from(inj, n, freq):
     return [*zip(inj_dates, n*[inj[1]], n*[inj[2]])]
 
 def rep_from_dose(date, dose, ef, n, freq):
-    """Repeats injections with cycling doses and frequencies from a given first injection.
+    """
+    Repeats injections with cycling doses and cycling frequencies from a
+    given first injection. Returns a list of lists.
 
     This is used for composing and generating injections for use in the
-    array passed to createInjections()."""
+    ndarray passed to createInjections()."""
     if not isinstance(dose, Iterable):
         dose = (dose,)
     if isinstance(freq, str) or not isinstance(freq, Iterable):
@@ -120,20 +147,6 @@ def rep_from_dose(date, dose, ef, n, freq):
     doses = [d for d in (math.floor(n / len(dose)) * dose)[0:n]]
     return [*zip(inj_dates, doses, n*[ef])]
 
-# Create an injections Series for a particular injection function that cycles
-# monotonically for the desired length of time.
-#
-#   ef        injectable
-#   sim_time  length of simulation [Days]
-#   inj_freq  injection every inj_freq [Pandas frequency thing]
-def createInjectionsCycle(ef, sim_time, inj_freq):
-    end_date = pd.to_datetime(sim_time, unit='D')
-    dates = pd.date_range(start=0, end=end_date, freq=inj_freq)
-    if dates[-1] != end_date:
-        dates = pd.to_datetime(np.append(dates.to_series().values, [end_date.to_datetime64()]))
-    inj = [(1.0, ef)] * (len(dates)-1) + [(0.0, ef)]
-    return pd.Series(inj, index=dates)
-
 
 # TODO: this start time handling is funky and not generalizable to different
 # contexts this function may be used in, like the more recent optimization
@@ -144,8 +157,17 @@ def zeroLevelsFromInjections(injections, sample_freq):
     dates      = pd.date_range(start_time, end_time, freq=sample_freq)
     return pd.Series(np.zeros(len(dates)), index=dates)
     
-def zeroLevelsAtInjections(injections):
-    return pd.Series(np.zeros(len(injections)), index=injections.index)
+def zeroLevelsAtMoments(moments):
+    """
+    Returns a Pandas Series of zeros indexed by the index of the input.
+    
+    This is used to create the output buffer for calcInjections when you are
+    interested in the calculated blood level at a particular moment in time,
+    such as at the moment of injection, or a moment of measurement. It works
+    with any input that has the .index property and implements .__len__(),
+    and is expected to be used with Series and DataFrame inputs indexed by
+    DateTime."""
+    return pd.Series(np.zeros(len(moments)), index=moments.index)
 
 
 # Conceptually, this constructs a lazy-evaluated continuous function of total
@@ -157,9 +179,8 @@ def zeroLevelsAtInjections(injections):
 # returns the total blood level contribution of a single injection depot, and
 # each depot contributes linearly to the total systemic blood concentration.
 def calcInjections(zero_levels, injections, injectables):
-    for inj_date, inj in injections.items():
-        (inj_dose, inj_ef) = inj
-        inj_ef = injectables[inj_ef]
+    for inj_date, inj_dose, inj_injectable in injections[["dose", "injectable"]].itertuples():
+        inj_ef = injectables[inj_injectable]
         
         # If the function has a specified domain, we can use that to avoid
         # doing work we don't need to. If it doesn't have a specified domain,
@@ -182,10 +203,11 @@ def calcInjections(zero_levels, injections, injectables):
 
 def calibrateInjections(injections, injectables, estradiol_measurements):
     levels_at_measurements = calcInjections(
-        pd.Series(np.zeros(len(estradiol_measurements)), index=estradiol_measurements.index),
+        zeroLevelsAtMoments(estradiol_measurements),
         injections,
         injectables)
-    return (estradiol_measurements / levels_at_measurements).mean()
+    return (estradiol_measurements["value"] / levels_at_measurements).mean()
+
 
 def startPlot():
     plt.rcParams['figure.figsize'] = [15, 12]
@@ -194,39 +216,49 @@ def startPlot():
     plt.gca().set_axisbelow(True)
     plt.gca().set_zorder(0)
 
-# Plot the continuous, simulated curve of blood levels for a series of
-# injections, along with associated blood level measurements if they exist.
-#
-#   injections              Injections to plot, represented as a Pandas Series of
-#                           (dose [mg], ef [function]) tuples indexed by DateTime.
-#                           See createInjections(...).
-#   sample_freq             Frequency at which the calculated continuous curve is sampled
-#                           at. [Pandas frequency thing]
-#   estradiol_measurements  (Optional) Actual blood level measurements to plot alongside
-#                           the simulated curve, represented as a Pandas series of pg/mL
-#                           values indexed by DateTime.
-#   label                   Matplotlib label to attach to the curve. [String]
+
 def plotInjections(injections,
                    injectables,
-                   estradiol_measurements=pd.Series(dtype=np.float64),
-                   #calibration_factor=1.0,
+                   estradiol_measurements=pd.DataFrame(),
                    sample_freq='1H',
                    label=''):
+    """
+    Plot the continuous, simulated curve of blood levels for a series of
+    injections, along with associated blood level measurements if they exist.
+
+    injections              Injections to plot, represented as a Pandas
+                            DataFrame with "dose" and "injectable" columns
+                            indexed by DateTime. See createInjections(...). By
+                            convention, the last injection is expected to be a
+                            zero-dose marker of the simulation window and is
+                            discarded.
+    injectables             Mapping of injectable name to ef function. [dict]
+    estradiol_measurements  (Optional) Actual blood level measurements to plot
+                            alongside the simulated curve, represented as a
+                            Pandas DataFrame with "value" and "method" columns
+                            indexed by DateTime. See createMeasurements(...).
+    sample_freq             (Optional) Frequency at which the calculated
+                            continuous curve is sampled at. [Pandas frequency
+                            thing]
+    label                   (Optional) Matplotlib label to attach to the curve.
+                            [String]"""
+    
     # Easy way to display a vertical line at the current time
     estradiol_measurements = pd.concat([
         estradiol_measurements,
-        pd.Series([-10.0], index=[pd.Timestamp.now()])])
+        createMeasurements(np.array([[pd.Timestamp.now(), -10.0, np.nan]]))])
     
+    # Calculate everything we'll need to plot
     e_levels = calcInjections(
         zeroLevelsFromInjections(injections, sample_freq),
         injections,
         injectables)
-    levels_at_injection = calcInjections(
-        zeroLevelsAtInjections(injections),
+    levels_at_injections = calcInjections(
+        zeroLevelsAtMoments(injections),
         injections,
         injectables)[0:-1]
     levels_at_measurements = calcInjections(
-        pd.Series(np.zeros(len(estradiol_measurements)), index=estradiol_measurements.index),
+        zeroLevelsAtMoments(estradiol_measurements),
         injections,
         injectables)
     
@@ -271,12 +303,12 @@ def plotInjections(injections,
                 zorder=1)
     
     # Plot moments of injection as dose-scaled points on top of the simulated curce
-    doses         = [dose for dose,ef in injections.values[0:-1]]
+    doses         = injections["dose"].values[0:-1]
     norm_doses    = Normalize(vmin=-1.0*max(doses), vmax=max(doses)+0.2)(doses)
     marker_sizes  = [(9.0*dose+2.0)**2 for dose in norm_doses]
     marker_colors = [(dose, 1.0-dose, 0.7, 1.0) for dose in norm_doses]
-    ax_pri.scatter(levels_at_injection.index,
-                   levels_at_injection.values,
+    ax_pri.scatter(levels_at_injections.index,
+                   levels_at_injections.values,
                    s=marker_sizes,
                    c=marker_colors,
                    marker='2',
@@ -284,7 +316,7 @@ def plotInjections(injections,
     
     # Plot measured blood levels
     ax_pri.plot(estradiol_measurements.index,
-                estradiol_measurements.values,
+                estradiol_measurements["value"].values,
                 'o')
     
     #errors = measurements - levels_at_measurements
@@ -295,7 +327,7 @@ def plotInjections(injections,
 
     # Draw vertical lines from the measured points to the simulated curve
     measurements_points = [
-        (mdates.date2num(d), m) for d,m in estradiol_measurements.items()]
+        (mdates.date2num(d), m) for d,m in estradiol_measurements["value"].items()]
     levels_at_measurements_points = [
         (mdates.date2num(d), m) for d,m in levels_at_measurements.items()]
     
@@ -303,23 +335,27 @@ def plotInjections(injections,
     lc = mc.LineCollection(lines, linestyles=(0, (2, 3)), colors=(0.7, 0.3, 0.3, 1.0), zorder=3)
     ax_pri.add_collection(lc);
 
-# Plot multiple injection curves for a range of injection frequencies.
-#
-#   ef         Interpolated function ef(T days) = (E mg) (from rawDVToFunc) for single injection
-#   sim_time   Total simulation time [Days]
-#   sim_freq   Resolution of simulaion [Pandas frequency thing]
-#   inj_freqs  List of period curves to plot [Days]
+    
 def plotInjectionFrequencies(ef, sim_time, sim_freq, inj_freqs):
+    """
+    Plot multiple injection curves for a range of injection frequencies.
+
+    ef         Interpolated function ef(T days) = (E mg) (from rawDVToFunc) for
+               a single injection.
+    sim_time   Total simulation time. [Days]
+    sim_freq   Resolution of simulaion. [Pandas frequency thing]
+    inj_freqs  List of period curves to plot. [Pandas frequency things]
+    """
     injectables = {"ef": ef}
     for freq in inj_freqs:
         plotInjections(
-            createInjectionsCycle(
-                "ef",
-                sim_time,
-                pd.offsets.Nano(freq*24.0*60.0*60.0*1e9)),
+            createInjectionsCycle("ef", sim_time, freq),
             injectables,
             sample_freq=sim_freq,
             label=freq)
 
-    plt.legend(title='Injection frequency\n(days)')
+    plt.gca().set_xlim(
+        plt.gca().get_xlim()[0],
+        pd.to_datetime(sim_time, unit='D'))
+    plt.legend(title='Injection frequency')
     plt.show()
