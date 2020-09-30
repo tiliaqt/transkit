@@ -64,11 +64,13 @@ def rawDVToFunc(raw):
 
 def dateTimeToDays(dt):
     return dt.astype('double')/1.0e9/60.0/60.0/24.0
+def timeStampToDays(ts):
+    return dateTimeToDays(ts.to_datetime64())
 def timeDeltaToDays(td):
     return td.total_seconds()/60.0/60.0/24.0
 
 
-def createInjections(inj_array):
+def createInjections(inj_array, date_format=None, date_unit='ns'):
     """
     Create a DataFrame of injections for use in computation.
 
@@ -83,11 +85,13 @@ def createInjections(inj_array):
     into a Pandas DataFrame with the date as index, and dose and injectable as
     columns. This allows the user-typed input array to look nice and be easy
     to work with. Date values can be anything parsable by pd.to_datetime(...)."""
-    return pd.DataFrame(inj_array[:,1:3],
-                        index=pd.to_datetime(inj_array[:,0]),
-                        columns=["dose", "injectable"])
+    df = pd.DataFrame(inj_array[:,1:3],
+                      index=pd.to_datetime(inj_array[:,0], format=date_format, unit=date_unit),
+                      columns=["dose", "injectable"])
+    df.loc[:, "dose"] = df["dose"].apply(pd.to_numeric)
+    return df
 
-def createMeasurements(measurements_array):
+def createMeasurements(measurements_array, date_format=None, date_unit='ns'):
     """
     Create a DataFrame of measurements for use in computation.
 
@@ -103,22 +107,26 @@ def createMeasurements(measurements_array):
     method as columns. This allows the user-typed input array to look nice and
     be easy to work with. Date values can be anything parsable by
     pd.to_datetime(...)."""
-    return pd.DataFrame(measurements_array[:,1:3],
-                       index=pd.to_datetime(measurements_array[:,0]),
-                       columns=["value", "method"])
+    df = pd.DataFrame(measurements_array[:,1:3],
+                      index=pd.to_datetime(measurements_array[:,0], format=date_format, unit=date_unit),
+                      columns=["value", "method"])
+    df.loc[:, "value"] = df["value"].apply(pd.to_numeric)
+    return df
 
-def createInjectionsCycle(ef, sim_time, inj_freq):
+def createInjectionsCycle(ef, sim_time, inj_freq, start_date=0):
     """
     Creates a DataFrame of injections for a particular injectable that cycles
     monotonically for the desired length of time.
 
-    ef        injectable
-    sim_time  length of simulation [Days]
-    inj_freq  injection every inj_freq [Pandas frequency thing]"""
+    ef          Injectable
+    sim_time    Length of simulation [Days]
+    inj_freq    Injection every inj_freq [Pandas frequency thing]
+    start_date  Cycle starting from this date. Can be anything parsable
+                by pd.to_datetime(...)."""
 
-    n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0)) + 1
-    injs = createInjections(np.array(rep_from([0, 1.0, ef], n=n_inj, freq=inj_freq)))
-    injs["dose"][-1] = 0
+    n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0))
+    injs = createInjections(np.array(rep_from([start_date, 1.0, ef], n=n_inj, freq=inj_freq)))
+    injs.loc[injs.iloc[[-1]].index, "dose"] = 0
     return injs
 
 def rep_from(inj, n, freq):
@@ -175,10 +183,8 @@ def zeroLevelsAtMoments(moments):
     This is used to create the output buffer for calcInjections when you are
     interested in the calculated blood level at a particular moment in time,
     such as at the moment of injection, or a moment of measurement. It works
-    with any input that has the .index property and implements .__len__(),
-    and is expected to be used with Series and DataFrame inputs indexed by
-    DateTime."""
-    return pd.Series(np.zeros(len(moments)), index=moments.index)
+    with any DatetimeIndex as input."""
+    return pd.Series(np.zeros(len(moments)), index=moments)
 
 
 # Conceptually, this constructs a lazy-evaluated continuous function of total
@@ -214,7 +220,7 @@ def calcInjections(zero_levels, injections, injectables):
 
 def calibrateInjections(injections, injectables, estradiol_measurements):
     levels_at_measurements = calcInjections(
-        zeroLevelsAtMoments(estradiol_measurements),
+        zeroLevelsAtMoments(estradiol_measurements.index),
         injections,
         injectables)
     return (estradiol_measurements["value"] / levels_at_measurements).mean()
@@ -265,11 +271,11 @@ def plotInjections(injections,
         injections,
         injectables)
     levels_at_injections = calcInjections(
-        zeroLevelsAtMoments(injections),
+        zeroLevelsAtMoments(injections.index),
         injections,
         injectables)[0:-1]
     levels_at_measurements = calcInjections(
-        zeroLevelsAtMoments(estradiol_measurements),
+        zeroLevelsAtMoments(estradiol_measurements.index),
         injections,
         injectables)
     
