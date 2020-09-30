@@ -1,4 +1,4 @@
-import injectio
+from injectio import pharma
 import numpy as np
 
 def normalizeInjection(ef, ef_dose):
@@ -26,7 +26,7 @@ ec_level_1mg = np.array([
     [20.0, 17.0],
     [37.0, 0.0],
     [38.0, 0.0]]);
-ef_ec_1mg = injectio.rawDVToFunc(ec_level_1mg)
+ef_ec_1mg = pharma.rawDVToFunc(ec_level_1mg)
 
 # Estradiol Cypionate 5.0mg
 #https://en.wikipedia.org/wiki/Template:Hormone_levels_with_estradiol_valerate_by_intramuscular_injection#/media/File:Estradiol_levels_after_a_single_5_mg_intramuscular_injection_of_estradiol_esters.png
@@ -53,7 +53,7 @@ ec_level_5mg = np.array([
     [14.0, 45.0],
     [24.0, 0.0],
     [25.0, 0.0]]);
-ef_ec_5mg = injectio.rawDVToFunc(ec_level_5mg)
+ef_ec_5mg = pharma.rawDVToFunc(ec_level_5mg)
 ef_ec_5mg_norm = normalizeInjection(ef_ec_5mg, 5.0)
 
 # Estradiol Valerate 5.0mg
@@ -77,7 +77,7 @@ ev_level_5mg = np.array([
     [13.0, 10.0],
     [21.0, 0.0],
     [22.0, 0.0]]);
-ef_ev_5mg = injectio.rawDVToFunc(ev_level_5mg)
+ef_ev_5mg = pharma.rawDVToFunc(ev_level_5mg)
 ef_ev_5mg_norm = normalizeInjection(ef_ev_5mg, 5.0)
 
 pill_zero = lambda T: 0.0
