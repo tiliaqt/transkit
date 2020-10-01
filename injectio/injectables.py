@@ -1,5 +1,6 @@
 from injectio import pharma
 import numpy as np
+import pandas as pd
 from numpy.polynomial import Polynomial
 
 def normalizedInjection(ef, ef_dose):
@@ -95,7 +96,7 @@ ef_ev_5mg = pharma.rawDVToFunc(ev_level_5mg)
 ef_ev_5mg_norm = normalizedInjection(ef_ev_5mg, 5.0)
 
 pill_zero = lambda T: 0.0
-pill_zero.domain = (0.0, 0.0)
+pill_zero.domain = (pd.to_timedelta(0.0, unit='D'), pd.to_timedelta(0.0, unit='D'))
 
 injectables = {
     "ec": ef_ec_1mg,

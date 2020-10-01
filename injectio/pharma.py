@@ -59,7 +59,7 @@ def rawDVToFunc(raw):
             # conditional entirely by setting the edge values of slope_lut to 0
             # and being tricksy with indexing.
             return sample_y[idx] + (x - sample_x[idx])*slope_lut[idx]
-    ef.domain = (min_x, max_x)
+    ef.domain = (pd.to_timedelta(min_x, unit='D'), pd.to_timedelta(max_x, unit='D'))
     return ef
 
 def dateTimeToDays(dt):
@@ -207,7 +207,7 @@ def calcInjections(zero_levels, injections, injectables):
             # Only need to compute where inj_ef > 0. This is guaranteed to be true
             # exactly across the domain of inj_ef, so we can save significant
             # computation here.
-            max_T = inj_date + pd.to_timedelta(inj_ef.domain[1], unit='D')
+            max_T = inj_date + inj_ef.domain[1]
             levels_range = zero_levels[inj_date:max_T].index
         else:
             levels_range = zero_levels.index
