@@ -218,14 +218,6 @@ def calcInjections(zero_levels, injections, injectables):
     return zero_levels
 
 
-def calibrateInjections(injections, injectables, estradiol_measurements):
-    levels_at_measurements = calcInjections(
-        zeroLevelsAtMoments(estradiol_measurements.index),
-        injections,
-        injectables)
-    return (estradiol_measurements["value"] / levels_at_measurements).mean()
-
-
 def startPlot():
     plt.rcParams['figure.figsize'] = [15, 12]
     plt.figure(dpi=150)

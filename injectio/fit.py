@@ -9,6 +9,9 @@ from matplotlib import dates as mdates
 
 from injectio import pharma, injectables
 
+#########################################################
+### Fitting injections to a desired blood level curve ###
+
 def createInitialAndBounds(injections,
                            max_dose=np.inf,
                            time_bounds='midpoints'):
@@ -158,3 +161,88 @@ def plotOptimizationRun(run):
     lc = mc.LineCollection(lines, linestyles='dotted', zorder=10)
     ax.add_collection(lc);
     ax.legend();
+    
+
+##############################################################
+### Fitting a calibration polynomial on ef to measurements ###
+
+def calibrateInjections_lsqpoly(injections,
+                                uncalibrated_injectables,
+                                injectable,
+                                measurements):
+    """
+    Calibrates the dose-response of a specific injectable given a series of
+    injections and blood-level measurements from the same time period. This
+    uses least squares regression to compute polynomial coefficients X that
+    calibrate the injectable as: X[0] + X[1]*ef(T), such the errors between
+    the simulated blood levels and the measurements are minimized.
+    
+    Returns a calibrated copy of 'uncalibrated_injectables' and the calibrated
+    polynomial coefficients for the specified injectable.
+    
+    injections                DataFrame of injections (see injectio.createInjections()).
+    uncalibrated_injectables  Dict of injectables (see injectio.injectables).
+    injectable                Which injectable in 'injectables' to calibrate.
+    measurements              DataFrame of blood level measurements corresponding
+                              to the actual dose response of the to-be-calibrated
+                              function injectables[injectable] (see
+                              injectio.createMeasurements())."""
+    
+    calibrated_injectables = dict(uncalibrated_injectables)
+    
+    # Residuals function
+    def f(X):
+        calibrated_injectables[injectable] =\
+            injectables.calibratedInjection(uncalibrated_injectables[injectable], X)
+        levels_at_measurements = pharma.calcInjections(
+            pharma.zeroLevelsAtMoments(measurements.index),
+            injections,
+            calibrated_injectables)
+        return levels_at_measurements - measurements["value"]
+    
+    # Initial condition is un-transformed ef(T)
+    X0 = np.array([0.0, 1.0])
+    result = least_squares(f, X0,
+                           bounds=(np.zeros_like(X0),
+                                   np.full_like(X0, np.inf)),
+                           max_nfev=10,
+                           verbose=0)
+    calibrated_injectables[injectable] =\
+        injectables.calibratedInjection(uncalibrated_injectables[injectable], result.x)
+    return calibrated_injectables, result.x
+
+
+def calibrateInjections_meanscale(injections,
+                                  uncalibrated_injectables,
+                                  injectable,
+                                  measurements):
+    """
+    Calibrates the dose-response of a specific injectable given a series of
+    injections and blood-level measurements from the same time period. This
+    uses a trivial mean of error ratios to compute a scale factor on ef(T)
+    that attempts to minimize the errors between the simulated blood levels
+    and the measurements.
+    
+    Returns a calibrated copy of 'uncalibrated_injectables' and the calibrated
+    scale factor (represented as order-1 polynomial coefficients) for the
+    specified injectable.
+    
+    injections                DataFrame of injections (see injectio.createInjections()).
+    uncalibrated_injectables  Dict of injectables (see injectio.injectables).
+    injectable                Which injectable in 'injectables' to calibrate.
+    measurements              DataFrame of blood level measurements corresponding
+                              to the actual dose response of the to-be-calibrated
+                              function injectables[injectable] (see
+                              injectio.createMeasurements())."""
+    
+    levels_at_measurements = pharma.calcInjections(
+        pharma.zeroLevelsAtMoments(measurements.index),
+        injections,
+        uncalibrated_injectables)
+    
+    cali_X = np.array([0.0, (measurements["value"] / levels_at_measurements).mean()])
+    
+    calibrated_injectables = dict(uncalibrated_injectables)
+    calibrated_injectables[injectable] = injectables.calibratedInjection(
+        uncalibrated_injectables[injectable], cali_X)
+    return calibrated_injectables, cali_X

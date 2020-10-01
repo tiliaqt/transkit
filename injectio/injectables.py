@@ -1,10 +1,24 @@
 from injectio import pharma
 import numpy as np
+from numpy.polynomial import Polynomial
 
-def normalizeInjection(ef, ef_dose):
+def normalizedInjection(ef, ef_dose):
     ef_norm = lambda T: ef(T) / ef_dose
     ef_norm.domain = ef.domain
     return ef_norm
+
+def calibratedInjection(ef, X):
+    """
+    Wraps the injectable function ef and transforms it by the linear power
+    series specified by polynomial coefficients in ndarray X, such that:
+    
+        calibratedInjection(ef, X)(T) = X[0] + X[1]*ef(T) + ... + X[n]*ef(T)**n
+    """
+    
+    poly = Polynomial(X)
+    ef_cali = lambda T: poly(ef(T))
+    ef_cali.domain = ef.domain
+    return ef_cali
 
 # Estradiol Cypionate 1.0mg
 # https://en.wikipedia.org/wiki/Template:Hormone_levels_with_estradiol_cypionate_by_intramuscular_injection#/media/File:Estradiol_levels_after_a_single_intramuscular_injection_of_1.0_to_1.5-mg_estradiol_cypionate_in_hypogonadal_girls.png
@@ -54,7 +68,7 @@ ec_level_5mg = np.array([
     [24.0, 0.0],
     [25.0, 0.0]]);
 ef_ec_5mg = pharma.rawDVToFunc(ec_level_5mg)
-ef_ec_5mg_norm = normalizeInjection(ef_ec_5mg, 5.0)
+ef_ec_5mg_norm = normalizedInjection(ef_ec_5mg, 5.0)
 
 # Estradiol Valerate 5.0mg
 # https://en.wikipedia.org/wiki/Template:Hormone_levels_with_estradiol_valerate_by_intramuscular_injection#/media/File:Estradiol_levels_after_a_single_5_mg_intramuscular_injection_of_estradiol_esters.png
@@ -78,7 +92,7 @@ ev_level_5mg = np.array([
     [21.0, 0.0],
     [22.0, 0.0]]);
 ef_ev_5mg = pharma.rawDVToFunc(ev_level_5mg)
-ef_ev_5mg_norm = normalizeInjection(ef_ev_5mg, 5.0)
+ef_ev_5mg_norm = normalizedInjection(ef_ev_5mg, 5.0)
 
 pill_zero = lambda T: 0.0
 pill_zero.domain = (0.0, 0.0)
