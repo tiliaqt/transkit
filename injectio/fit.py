@@ -127,7 +127,7 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
     
     return result
 
-def plotOptimizationRun(run):
+def plotOptimizationRun(fig, ax, run):
     # Calculate levels at the initial and optimized moments of injection
     init_levels = pharma.calcInjections(
         pharma.zeroLevelsAtMoments(run["injections_init"].index),
@@ -138,14 +138,15 @@ def plotOptimizationRun(run):
         run["injections_optim"],
         injectables.injectables)
     
-    ax = plt.gca()
     ax.plot(run["target"][0], run["target"][1], label="Target Curve")
     pharma.plotInjections(
+        fig, ax,
         run["injections_init"],
         injectables.injectables,
         sample_freq='6H',
         label="Initial condition")
     pharma.plotInjections(
+        fig, ax,
         run["injections_optim"],
         injectables.injectables,
         sample_freq='6H',
@@ -162,6 +163,9 @@ def plotOptimizationRun(run):
     ax.add_collection(lc);
     ax.legend();
     
+    ax.set_xlim((mdates.date2num(run["target"][0][0]),
+                 mdates.date2num(run["target"][0][-1])))
+
 
 ##############################################################
 ### Fitting a calibration polynomial on ef to measurements ###

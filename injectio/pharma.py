@@ -1,7 +1,7 @@
 from collections import defaultdict
 from collections.abc import Iterable
 import math
-from matplotlib import pyplot as plt
+from matplotlib import pyplot
 from matplotlib import dates as mdates
 from matplotlib import collections as mc
 from matplotlib import ticker as mticker
@@ -124,7 +124,7 @@ def createInjectionsCycle(ef, sim_time, inj_freq, start_date=0):
     start_date  Cycle starting from this date. Can be anything parsable
                 by pd.to_datetime(...)."""
 
-    n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0))
+    n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0)) + 1
     injs = createInjections(np.array(rep_from([start_date, 1.0, ef], n=n_inj, freq=inj_freq)))
     injs.loc[injs.iloc[[-1]].index, "dose"] = 0
     return injs
@@ -222,14 +222,14 @@ def calcInjections(zero_levels, injections, injectables):
 
 
 def startPlot():
-    plt.rcParams['figure.figsize'] = [15, 12]
-    plt.figure(dpi=150)
-    plt.ylabel('Estradiol (pg/mL)')
-    plt.gca().set_axisbelow(True)
-    plt.gca().set_zorder(0)
+    fig, ax = pyplot.subplots(figsize=[15, 12], dpi=150)
+    ax.set_ylabel('Estradiol (pg/mL)')
+    ax.set_axisbelow(True)
+    ax.set_zorder(0)
+    return fig, ax
 
-
-def plotInjections(injections,
+def plotInjections(fig, ax,
+                   injections,
                    injectables,
                    estradiol_measurements=pd.DataFrame(),
                    sample_freq='1H',
@@ -275,7 +275,7 @@ def plotInjections(injections,
         injectables)
     
     # The primary axis displays absolute date.
-    ax_pri = plt.gca()
+    ax_pri = ax
     ax_pri.set_xlabel('Date')
     ax_pri.xaxis_date()
     
@@ -289,7 +289,7 @@ def plotInjections(injections,
     ax_pri.xaxis.set_minor_locator(mdates.DayLocator(bymonthday=range(1, 32, 3)))
     ax_pri.xaxis.set_minor_formatter(mdates.DateFormatter("%d"))
     ax_pri.tick_params(which='major', axis='x', labelrotation=-45, pad=12)
-    plt.setp(ax_pri.xaxis.get_majorticklabels(), ha="left")
+    pyplot.setp(ax_pri.xaxis.get_majorticklabels(), ha="left")
     ax_pri.tick_params(which='minor', axis='x', labelrotation=-90, labelsize=6)
     
     ax_pri.grid(which='major', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
@@ -335,12 +335,6 @@ def plotInjections(injections,
     ax_pri.plot(estradiol_measurements.index,
                 estradiol_measurements["value"].values,
                 'o')
-    
-    #errors = measurements - levels_at_measurements
-    #ax_pri.errorbar(levels_at_measurements.index,
-    #                levels_at_measurements.values,
-    #                yerr=errors.values,
-    #                color=(0.5, 0.4, 0.4, 0.5), capsize=4.0, fmt='none')
 
     # Draw vertical lines from the measured points to the simulated curve
     measurements_points = [
@@ -351,9 +345,39 @@ def plotInjections(injections,
     lines = list(zip(measurements_points, levels_at_measurements_points))
     lc = mc.LineCollection(lines, linestyles=(0, (2, 3)), colors=(0.7, 0.3, 0.3, 1.0), zorder=3)
     ax_pri.add_collection(lc);
+    
+    for line in lines:
+        # if length of line in figure coords is > length of text in figure
+        # coords, then draw the text at the midpoint of the line. We assume
+        # this is true to begin with, but then alter the text if it turns out
+        # to not be true.
+        mp = (0.5*(line[0][0] + line[1][0]), 0.5*(line[0][1] + line[1][1]))
+        txt = ax_pri.text(
+            mp[0], mp[1],
+            mdates.DateFormatter("1%Y.%b.%d.%H%M").format_data(line[0][0]),
+            rotation=-90,
+            ha="left", va="center",
+            fontsize="x-small",
+            color=(0.7, 0.3, 0.3, 1.0),
+            zorder=3,
+            clip_on=True)
+        
+        # elif length of line in display coords is <= length of text in display
+        # coords, then draw the text above or below the line segment, with
+        # ha="center".
+        txt_bbox = txt.get_window_extent(renderer=fig.canvas.get_renderer())
+        line_dc = ax_pri.transData.transform(line)
+        if abs(line_dc[0][1] - line_dc[1][1]) <=\
+           abs(txt_bbox.p0[1] - txt_bbox.p1[1]):
+            txt.set_y(line[0][1])
+            if line[0][1] >= line[1][1]:
+                txt.set_va("bottom")
+            else:
+                txt.set_va("top")
+            txt.set_ha("center")
 
     
-def plotInjectionFrequencies(ef, sim_time, sim_freq, inj_freqs):
+def plotInjectionFrequencies(fig, ax, ef, sim_time, sim_freq, inj_freqs):
     """
     Plot multiple injection curves for a range of injection frequencies.
 
@@ -367,13 +391,13 @@ def plotInjectionFrequencies(ef, sim_time, sim_freq, inj_freqs):
     injectables = {"ef": ef}
     for freq in inj_freqs:
         plotInjections(
+            fig, ax,
             createInjectionsCycle("ef", sim_time, freq),
             injectables,
             sample_freq=sim_freq,
             label=f"{freq} freq")
 
-    plt.gca().set_xlim(
-        plt.gca().get_xlim()[0],
+    ax.set_xlim(
+        ax.get_xlim()[0],
         pd.to_datetime(sim_time, unit='D'))
-    plt.legend()
-    plt.show()
+    ax.legend()
