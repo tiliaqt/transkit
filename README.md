@@ -13,3 +13,11 @@ Then, to start Jupyter, run:
 ```
 > poetry run jupyter lab
 ```
+
+To cut an html release of the notebooks for publishing, run:
+
+```
+> ./publish.sh
+```
+
+It outputs the html files to the `../hormone-pages` directory, and expects that to exist.
