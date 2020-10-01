@@ -1,17 +1,15 @@
 from collections import defaultdict
 from collections.abc import Iterable
 import math
-import numpy as np
-import pandas as pd
-
-from scipy import interpolate
-from numba import jit
-
 from matplotlib import pyplot as plt
 from matplotlib import dates as mdates
 from matplotlib import collections as mc
 from matplotlib import ticker as mticker
 from matplotlib.colors import Normalize
+from numba import jit
+import numpy as np
+import pandas as pd
+from scipy import interpolate
 
 
 injectables_markers = defaultdict(lambda: "2", {
@@ -85,6 +83,7 @@ def createInjections(inj_array, date_format=None, date_unit='ns'):
     into a Pandas DataFrame with the date as index, and dose and injectable as
     columns. This allows the user-typed input array to look nice and be easy
     to work with. Date values can be anything parsable by pd.to_datetime(...)."""
+    
     df = pd.DataFrame(inj_array[:,1:3],
                       index=pd.to_datetime(inj_array[:,0], format=date_format, unit=date_unit),
                       columns=["dose", "injectable"])
@@ -107,6 +106,7 @@ def createMeasurements(measurements_array, date_format=None, date_unit='ns'):
     method as columns. This allows the user-typed input array to look nice and
     be easy to work with. Date values can be anything parsable by
     pd.to_datetime(...)."""
+    
     df = pd.DataFrame(measurements_array[:,1:3],
                       index=pd.to_datetime(measurements_array[:,0], format=date_format, unit=date_unit),
                       columns=["value", "method"])
@@ -136,6 +136,7 @@ def rep_from(inj, n, freq):
 
     This is used for composing and generating injections for use in the
     ndarray passed to createInjections()."""
+    
     if isinstance(freq, str):
         freq = (freq,)
 
@@ -153,6 +154,7 @@ def rep_from_dose(date, dose, ef, n, freq):
 
     This is used for composing and generating injections for use in the
     ndarray passed to createInjections()."""
+    
     if not isinstance(dose, Iterable):
         dose = (dose,)
     if isinstance(freq, str) or not isinstance(freq, Iterable):
@@ -178,12 +180,13 @@ def zeroLevelsFromInjections(injections, sample_freq):
     
 def zeroLevelsAtMoments(moments):
     """
-    Returns a Pandas Series of zeros indexed by the index of the input.
+    Returns a Pandas Series of zeros indexed by the input.
     
     This is used to create the output buffer for calcInjections when you are
     interested in the calculated blood level at a particular moment in time,
     such as at the moment of injection, or a moment of measurement. It works
     with any DatetimeIndex as input."""
+    
     return pd.Series(np.zeros(len(moments)), index=moments)
 
 
@@ -360,6 +363,7 @@ def plotInjectionFrequencies(ef, sim_time, sim_freq, inj_freqs):
     sim_freq   Resolution of simulaion. [Pandas frequency thing]
     inj_freqs  List of period curves to plot. [Pandas frequency things]
     """
+    
     injectables = {"ef": ef}
     for freq in inj_freqs:
         plotInjections(

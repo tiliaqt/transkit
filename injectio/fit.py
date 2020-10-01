@@ -1,13 +1,13 @@
 from collections import defaultdict
+from matplotlib import pyplot as plt
+from matplotlib import collections as mc
+from matplotlib import dates as mdates
 import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
 
-from matplotlib import pyplot as plt
-from matplotlib import collections as mc
-from matplotlib import dates as mdates
-
 from injectio import pharma, injectables
+
 
 #########################################################
 ### Fitting injections to a desired blood level curve ###

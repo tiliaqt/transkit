@@ -1,7 +1,9 @@
-from injectio import pharma
 import numpy as np
-import pandas as pd
 from numpy.polynomial import Polynomial
+import pandas as pd
+
+from injectio import pharma
+
 
 def normalizedInjection(ef, ef_dose):
     ef_norm = lambda T: ef(T) / ef_dose
