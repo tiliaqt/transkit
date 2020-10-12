@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "estradiol"
+name = "transkit"
 version = "0.1.0"
 description = ""
 authors = ["Violet Nēšana <violet@nesana.org>"]
