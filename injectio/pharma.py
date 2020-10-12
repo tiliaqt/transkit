@@ -222,11 +222,27 @@ def calcInjections(zero_levels, injections, injectables):
 
 
 def startPlot():
-    fig, ax = pyplot.subplots(figsize=[15, 12], dpi=150)
-    ax.set_ylabel('Estradiol (pg/mL)')
-    ax.set_axisbelow(True)
-    ax.set_zorder(0)
-    return fig, ax
+    fig, ax_pri = pyplot.subplots(figsize=[15, 12], dpi=150)
+    
+    ax_pri.set_axisbelow(True)
+    ax_pri.set_zorder(0)
+    
+    ax_pri.set_xlabel('Date')
+    ax_pri.set_ylabel('Estradiol (pg/mL)')
+    ax_pri.xaxis_date()
+    
+    ax_pri.xaxis.set_major_locator(mdates.MonthLocator())
+    ax_pri.xaxis.set_major_formatter(mdates.DateFormatter("1%Y.%b.%d.%H%M"))
+    ax_pri.xaxis.set_minor_locator(mdates.DayLocator(bymonthday=range(1, 32, 3)))
+    ax_pri.xaxis.set_minor_formatter(mdates.DateFormatter("%d"))
+    ax_pri.tick_params(which='major', axis='x', labelrotation=-45, pad=12)
+    pyplot.setp(ax_pri.xaxis.get_majorticklabels(), ha="left")
+    ax_pri.tick_params(which='minor', axis='x', labelrotation=-90, labelsize=6)
+    
+    ax_pri.grid(which='major', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
+    ax_pri.grid(which='minor', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.2)
+    
+    return fig, ax_pri
 
 def plotInjections(fig, ax,
                    injections,
@@ -276,30 +292,18 @@ def plotInjections(fig, ax,
     
     # The primary axis displays absolute date.
     ax_pri = ax
-    ax_pri.set_xlabel('Date')
-    ax_pri.xaxis_date()
     
     # matplotlib uses *FLOAT DAYS SINCE EPOCH* to represent dates.
     # set_xlim can take a pd DateTime, but converts it to that ^
     ax_pri.set_xlim((mdates.date2num(e_levels.index[0]),
                      mdates.date2num(e_levels.index[-1])))
     
-    ax_pri.xaxis.set_major_locator(mdates.MonthLocator())
-    ax_pri.xaxis.set_major_formatter(mdates.DateFormatter("1%Y.%b.%d.%H%M"))
-    ax_pri.xaxis.set_minor_locator(mdates.DayLocator(bymonthday=range(1, 32, 3)))
-    ax_pri.xaxis.set_minor_formatter(mdates.DateFormatter("%d"))
-    ax_pri.tick_params(which='major', axis='x', labelrotation=-45, pad=12)
-    pyplot.setp(ax_pri.xaxis.get_majorticklabels(), ha="left")
-    ax_pri.tick_params(which='minor', axis='x', labelrotation=-90, labelsize=6)
-    
-    ax_pri.grid(which='major', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
-    ax_pri.grid(which='minor', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.2)
-    
     # The secondary axis displays relative date in days.
     def mdate2reldays(X):
         return np.array([d - mdates.date2num(e_levels.index[0]) for d in X])
     def reldays2mdate(X):
         return np.array([mdates.date2num(e_levels.index[0]) + d for d in X])
+    
     ax_sec = ax_pri.secondary_xaxis('top', functions=(mdate2reldays, reldays2mdate))
     ax_sec.set_xlabel("Time (days)")
     ax_sec.set_xticks(np.arange(0.0,
