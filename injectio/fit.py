@@ -72,10 +72,14 @@ def createInjectionsTimesDoses(X_times_doses, X_injectables):
 # Then, X is represented as i_n dose values followed by i_n corresponding dates
 # in days.
 # So, len(X) == 2*i_n.
-def fTimesAndDoses(X_times_doses, X_injectables, target_x, target_y):
+def fTimesAndDoses(X_times_doses,
+                   X_injectables,
+                   injectables_map,
+                   target_x,
+                   target_y):
     injections = createInjectionsTimesDoses(X_times_doses, X_injectables)
     residuals = pharma.zeroLevelsAtMoments(target_x)
-    pharma.calcInjections(residuals, injections, injectables.injectables)
+    pharma.calcInjections(residuals, injections, injectables_map)
     residuals -= target_y
     return residuals
 
@@ -90,10 +94,14 @@ def emptyResults():
         "injections_optim": None,})
 
 def initializeRun(injections_init,
-                  target_x, target_y,
-                  max_dose=np.inf, time_bounds='midpoints'):
+                  injectables_map,
+                  target_x,
+                  target_y,
+                  max_dose=np.inf,
+                  time_bounds='midpoints'):
     run = {}
     run["injections_init"] = injections_init
+    run["injectables_map"] = injectables_map
     run["X0"], run["bounds"] = createInitialAndBounds(
         injections_init,
         max_dose=max_dose,
@@ -110,6 +118,7 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
         fTimesAndDoses,
         run["X0"],
         args=(X_injectables,
+              run["injectables_map"],
               run["target"][0],
               run["target"][1]),
         bounds=run["bounds"],
@@ -132,23 +141,23 @@ def plotOptimizationRun(fig, ax, run):
     init_levels = pharma.calcInjections(
         pharma.zeroLevelsAtMoments(run["injections_init"].index),
         run["injections_init"],
-        injectables.injectables)
+        run["injectables_map"])
     optim_levels = pharma.calcInjections(
         pharma.zeroLevelsAtMoments(run["injections_optim"].index),
         run["injections_optim"],
-        injectables.injectables)
+        run["injectables_map"])
     
     ax.plot(run["target"][0], run["target"][1], label="Target Curve")
     pharma.plotInjections(
         fig, ax,
         run["injections_init"],
-        injectables.injectables,
+        run["injectables_map"],
         sample_freq='6H',
         label="Initial condition")
     pharma.plotInjections(
         fig, ax,
         run["injections_optim"],
-        injectables.injectables,
+        run["injectables_map"],
         sample_freq='6H',
         label="Optimized solution")
     
