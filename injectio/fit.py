@@ -122,12 +122,11 @@ def fTimesAndDoses(X_times_doses,
                    X_partitions,
                    X_injectables,
                    injectables_map,
-                   target_x,
-                   target_y):
+                   target):
     injections = createInjectionsTimesDoses(X_times_doses, X_partitions, X_injectables)
-    residuals = pharma.zeroLevelsAtMoments(target_x)
+    residuals = pharma.zeroLevelsAtMoments(target.index)
     pharma.calcInjections(residuals, injections, injectables_map)
-    residuals -= target_y
+    residuals -= target
     return residuals
 
 
@@ -143,8 +142,7 @@ def emptyResults():
 
 def initializeRun(injections_init,
                   injectables_map,
-                  target_x,
-                  target_y,
+                  target,
                   max_dose=np.inf,
                   time_bounds='midpoints',
                   equal_injections=[]):
@@ -156,7 +154,7 @@ def initializeRun(injections_init,
         max_dose=max_dose,
         time_bounds=time_bounds,
         equal_injections=equal_injections)
-    run["target"] = (target_x, target_y)
+    run["target"] = target
     run["result"] = None
     run["injections_optim"] = None
     return run
@@ -170,8 +168,7 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
         args=(run["partitions"],
               X_injectables,
               run["injectables_map"],
-              run["target"][0],
-              run["target"][1]),
+              run["target"]),
         bounds=run["bounds"],
         max_nfev=max_nfev,
         **kwargs)
@@ -198,7 +195,7 @@ def plotOptimizationRun(fig, ax, run):
         run["injections_optim"],
         run["injectables_map"])
     
-    ax.plot(run["target"][0], run["target"][1], label="Target Curve")
+    ax.plot(run["target"], label="Target Curve")
     pharma.plotInjections(
         fig, ax,
         run["injections_init"],
@@ -223,8 +220,8 @@ def plotOptimizationRun(fig, ax, run):
     ax.add_collection(lc);
     ax.legend();
     
-    ax.set_xlim((mdates.date2num(run["target"][0][0]),
-                 mdates.date2num(run["target"][0][-1])))
+    ax.set_xlim((mdates.date2num(run["target"].index[0]),
+                 mdates.date2num(run["target"].index[-1])))
 
 
 ##############################################################
