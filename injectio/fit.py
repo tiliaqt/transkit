@@ -122,12 +122,13 @@ def fTimesAndDoses(X_times_doses,
                    X_partitions,
                    X_injectables,
                    injectables_map,
-                   target):
+                   target,
+                   exclude_area):
     injections = createInjectionsTimesDoses(X_times_doses, X_partitions, X_injectables)
     residuals = pharma.zeroLevelsAtMoments(target.index)
     pharma.calcInjections(residuals, injections, injectables_map)
     residuals -= target
-    return residuals
+    return residuals.drop(exclude_area)
 
 
 def emptyResults():
@@ -136,6 +137,7 @@ def emptyResults():
         "X0": None,
         "partitions": None,
         "bounds":None,
+        "exclude_area": pd.DatetimeIndex([]),
         "target": None,
         "result": None,
         "injections_optim": None,})
@@ -145,7 +147,8 @@ def initializeRun(injections_init,
                   target,
                   max_dose=np.inf,
                   time_bounds='midpoints',
-                  equal_injections=[]):
+                  equal_injections=[],
+                  exclude_area=pd.DatetimeIndex([])):
     run = {}
     run["injections_init"] = injections_init
     run["injectables_map"] = injectables_map
@@ -154,6 +157,7 @@ def initializeRun(injections_init,
         max_dose=max_dose,
         time_bounds=time_bounds,
         equal_injections=equal_injections)
+    run["exclude_area"] = exclude_area
     run["target"] = target
     run["result"] = None
     run["injections_optim"] = None
@@ -168,7 +172,8 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
         args=(run["partitions"],
               X_injectables,
               run["injectables_map"],
-              run["target"]),
+              run["target"],
+              run["exclude_area"]),
         bounds=run["bounds"],
         max_nfev=max_nfev,
         **kwargs)
@@ -196,6 +201,10 @@ def plotOptimizationRun(fig, ax, run):
         run["injectables_map"])
     
     ax.plot(run["target"], label="Target Curve")
+    ax.plot(run["target"][run["exclude_area"]],
+            marker='o',
+            color=(1.0, 0.1, 0.1, 0.5),
+            label="excluded from fit")
     pharma.plotInjections(
         fig, ax,
         run["injections_init"],
