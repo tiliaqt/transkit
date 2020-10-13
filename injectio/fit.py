@@ -12,10 +12,27 @@ from injectio import pharma, injectables
 #########################################################
 ### Fitting injections to a desired blood level curve ###
 
-def partitionInjections(injections, eq_injs):
+def partitionInjections(injections, equal_injections):
     """
-    Partition the injections into equivalence classes (which are necessarily
-    disjoint), using the specified equivalence properties."""
+    Partition the injections into disjoint equal-dose equivalence classes
+    using the specified equivalence properties.
+    
+    Note that any injections with duplicate time indices that are part of an
+    equivalence class in equal_injections will be irreversibly collapsed into a
+    single injection. This function expects the index of injections to be a
+    set, but Pandas actually represents the index as a multiset. If you need
+    injections to happen at the same moment in time, just perturb one by an
+    infinitesimal amount so that their indices don't compare equal.
+    
+    Returns a list of DatetimeIndexes, where each DatetimeIndex represents a
+    disjoint equivalence class of injections.
+    
+    Parameters:
+    ===========
+    injections        DataFrame of injections (see pharma.createInjections(...)).
+    equal_injections  Sequence of DatetimeIndexes where each DatetimeIndex
+                      corresponds to injections that are defined to have equal
+                      doses."""
     
     def areEquivalent(sa, sb, eq_sets):
         for eq in eq_sets:
@@ -23,7 +40,11 @@ def partitionInjections(injections, eq_injs):
                 return True
         return False
 
-    eq_sets = [set(e) for e in eq_injs]
+    # This implementation is O(n**2)–worse than the optimal O(n*log(n)) of a
+    # disjoint set forest–but the number of injections n will generally be
+    # small, and this is a lot simpler!
+    
+    eq_sets = [set(e) for e in equal_injections]
     partitions = [{inj} for inj in injections.index]
     p = 0
     while p < len(partitions):
@@ -40,7 +61,41 @@ def createInitialAndBounds(injections,
                            max_dose=np.inf,
                            time_bounds='midpoints',
                            equal_injections=[]):
-  
+    """
+    Create the initial X vector of independent variables that will be
+    optimized, the partitions of equal-dose injections, and the bounds
+    corresponding to X.
+    
+    Note that this treats the last injection as a dummy value and discards it
+    for the optimization.
+    
+    Returns a 3-tuple of: (
+        X:          Vector of independent variables that will be optimized by
+                    least_squares, represented as a stacked array of
+                    len(injections)-1 times, followed by len(partitions) doses.
+        partitions: Equal-dose partitions of injections, represented as a list
+                    P of partitions, where each P[j] is a set {i_0, ..., i_k}
+                    of integer indices representing the injections contained
+                    in the partition, and X[len(injections)-1+j] is the dose
+                    variable corresponding to the partition.
+        bounds:     2-tuple of ([lower_0, ...],[upper_0, ...]) bounds on the
+                    independent variables in X, as expected by least_squares.
+    )
+    
+    Parameters:
+    ===========
+    injections        Initial injections to be optimized.
+    max_dose          Maximum dose bound that will be used in the fitting.
+    time_bounds       Specfies how injection times will be bounded in the
+                      fitting. Possible options are:
+                         'fixed':     the injection times will not be optimized.
+                         'midpoints': the injection times will be optimized and
+                                      bounded to the midpoints between their
+                                      nearest neighboring injections (default).
+    equal_injections  A list of DatetimeIndexes where each DatetimeIndex
+                      corresponds to injections that should be constrained to
+                      have the same dose."""
+    
     # least_squares works on float parameters, so convert our injection dates
     # into float days.
     times = np.array([pharma.timeStampToDays(inj_date) for inj_date in injections.index][:-1])
@@ -79,56 +134,49 @@ def createInitialAndBounds(injections,
     
     return np.concatenate((times, part_doses)),\
            [{list(injections.index).index(inj) for inj in part} for part in partitions],\
-           list(zip(*time_bounds, *dose_bounds))
+           tuple(zip(*time_bounds, *dose_bounds))
 
 
-def createInjectionsTimesDoses(X_times_doses, X_partitions, X_injectables):
+def createInjectionsTimesDoses(X, X_partitions, X_injectables):
     """
-    Create an injections DataFrame from the stacked X vector of doses and times
-    used for curve fitting.
+    Create an injections DataFrame from the stacked X vector of independent
+    variables.
     
-    X_injectables is the column of injectables corresponding to each injection.
-    len(X_injectables) must == len(X_times_doses)/2.
-    Scipy's optimization functions just pass around the X vector of minimzation
-    parameters, but we need to reconstruct the full injections DataFrame to
+    Scipy's optimization functions just pass around the X vector of independent
+    variables, but we need to reconstruct the full injections DataFrame to
     pass to pharma.calcInjections(...).
     
     This doesn't include the final dummy injection! Which is fine for the purpose
     of the optimization function, but the resulting injections Series won't
-    behave as expected elsewhere."""
+    behave as expected elsewhere.
     
-    n_inj = X_times_doses.size - len(X_partitions)
+    Returns a DataFrame of injections (see pharma.createInjections).
     
-    times = X_times_doses[0:n_inj]
+    Parameters:
+    ===========
+    X               X vector of independent variables (see
+                    createInitialAndBounds).
+    X_partitions    Equal-dose partitions of injections (see
+                    createInitialAndBounds). It is used to unpartition
+                    the doses in X.
+    X_injectables   Column of injectables corresponding to each injection,
+                    exactly as it was in the original injections DataFrame
+                    (except for the discarded final injection)."""
+    
+    n_inj = X.size - len(X_partitions)
+    
+    times = X[0:n_inj]
     
     # Unpartition the doses
-    part_doses = X_times_doses[n_inj:]
+    part_doses = X[n_inj:]
     doses = np.zeros_like(times)
     for p in range(len(X_partitions)):
         for d in X_partitions[p]:
             doses[d] = part_doses[p]
     
-    X_times_doses = np.concatenate([times, doses, X_injectables]).reshape((n_inj, 3), order='F')
-    return pharma.createInjections(X_times_doses, date_unit='D')
-
-
-# X is a 1D array of injection parameters we optimize on.
-# Let i_n == len(injections)-1 (The last injection is always a zero-dose dummy
-# point, so we don't optimize on it).
-# Then, X is represented as i_n dose values followed by i_n corresponding dates
-# in days.
-# So, len(X) == 2*i_n.
-def fTimesAndDoses(X_times_doses,
-                   X_partitions,
-                   X_injectables,
-                   injectables_map,
-                   target,
-                   exclude_area):
-    injections = createInjectionsTimesDoses(X_times_doses, X_partitions, X_injectables)
-    residuals = pharma.zeroLevelsAtMoments(target.index)
-    pharma.calcInjections(residuals, injections, injectables_map)
-    residuals -= target
-    return residuals.drop(exclude_area)
+    return pharma.createInjections(
+        np.concatenate([times, doses, X_injectables]).reshape((n_inj, 3), order='F'),
+        date_unit='D')
 
 
 def emptyResults():
@@ -149,6 +197,27 @@ def initializeRun(injections_init,
                   time_bounds='midpoints',
                   equal_injections=[],
                   exclude_area=pd.DatetimeIndex([])):
+    """
+    Get everything set up to run least squares, and organize it into a tidy
+    dict.
+    
+    Returns a dict containing all the relevant information about the
+    optimization run (see emptyResults for structure), ready to be used with
+    runLeastSquares.
+    
+    Parameters:
+    ===========
+    injections_init   Initial set of injections to be optimized.
+    injectables_map   Mapping of injectable functions (see
+                      injectables.injectables).
+    target            Target function to fit the injections curve to [Pandas
+                      series index by Datetime].
+    max_dose          See createInitialAndBounds.
+    time_bounds       See createInitialAndBounds.
+    equal_injections  See createInitialAndBounds.
+    exclude_area      DatetimeIndex corresponding to points in target that
+                      should not be considered when computing residuals for the
+                      fit."""
     run = {}
     run["injections_init"] = injections_init
     run["injectables_map"] = injectables_map
@@ -165,6 +234,19 @@ def initializeRun(injections_init,
 
 def runLeastSquares(run, max_nfev=20, **kwargs):
     X_injectables = run["injections_init"]["injectable"][:-1].values
+    
+    # Residuals function
+    def fTimesAndDoses(X,
+                       X_partitions,
+                       X_injectables,
+                       injectables_map,
+                       target,
+                       exclude_area):
+        injections = createInjectionsTimesDoses(X, X_partitions, X_injectables)
+        residuals = pharma.zeroLevelsAtMoments(target.index)
+        pharma.calcInjections(residuals, injections, injectables_map)
+        residuals -= target
+        return residuals.drop(exclude_area)
     
     result = least_squares(
         fTimesAndDoses,
@@ -250,6 +332,8 @@ def calibrateInjections_lsqpoly(injections,
     Returns a calibrated copy of 'uncalibrated_injectables' and the calibrated
     polynomial coefficients for the specified injectable.
     
+    Parameters:
+    ===========
     injections                DataFrame of injections (see injectio.createInjections()).
     uncalibrated_injectables  Dict of injectables (see injectio.injectables).
     injectable                Which injectable in 'injectables' to calibrate.
@@ -297,6 +381,8 @@ def calibrateInjections_meanscale(injections,
     scale factor (represented as order-1 polynomial coefficients) for the
     specified injectable.
     
+    Parameters:
+    ===========
     injections                DataFrame of injections (see injectio.createInjections()).
     uncalibrated_injectables  Dict of injectables (see injectio.injectables).
     injectable                Which injectable in 'injectables' to calibrate.
