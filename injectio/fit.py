@@ -12,13 +12,38 @@ from injectio import pharma, injectables
 #########################################################
 ### Fitting injections to a desired blood level curve ###
 
+def partitionInjections(injections, eq_injs):
+    """
+    Partition the injections into equivalence classes (which are necessarily
+    disjoint), using the specified equivalence properties."""
+    
+    def areEquivalent(sa, sb, eq_sets):
+        for eq in eq_sets:
+            if not sa.isdisjoint(eq) and not sb.isdisjoint(eq):
+                return True
+        return False
+
+    eq_sets = [set(e) for e in eq_injs]
+    partitions = [{inj} for inj in injections.index]
+    p = 0
+    while p < len(partitions):
+        to_del = set()
+        for j in range(p+1, len(partitions)):
+            if areEquivalent(partitions[p], partitions[j], eq_sets):
+                partitions[p] |= partitions[j]
+                to_del.add(j)
+        partitions[:] = [partitions[d] for d in range(len(partitions)) if d not in to_del]
+        p += 1
+    return [pd.DatetimeIndex(p).sort_values() for p in partitions]
+
 def createInitialAndBounds(injections,
                            max_dose=np.inf,
-                           time_bounds='midpoints'):
+                           time_bounds='midpoints',
+                           equal_injections=[]):
+  
     # least_squares works on float parameters, so convert our injection dates
     # into float days.
     times = np.array([pharma.timeStampToDays(inj_date) for inj_date in injections.index][:-1])
-    doses = injections["dose"][:-1].to_numpy()
     
     if time_bounds == 'midpoints':
         # Midpoint time bound handling:
@@ -41,13 +66,23 @@ def createInitialAndBounds(injections,
     else:
         raise ValueError(f"'{time_bounds}' isn't a recognized input for time_bounds")
     
-    dose_bounds = [(0.0, max_dose)]*len(doses)
+    # This gives equivalence classes of Datetimes, but ultimately we need
+    # equivalence classes of injection indices because the exact times will
+    # change through the optimization and no longer be valid indices. What we
+    # later return from this function is essentially telling which doses in X
+    # correspond to which times in X.
+    partitions = partitionInjections(injections[:-1], equal_injections)
+    part_doses = np.zeros(len(partitions))
+    for p in range(len(partitions)):
+        part_doses[p] = injections["dose"][partitions[p][0]]
+    dose_bounds = [(0.0, max_dose)]*len(partitions)
     
-    return np.concatenate((times, doses)),\
+    return np.concatenate((times, part_doses)),\
+           [{list(injections.index).index(inj) for inj in part} for part in partitions],\
            list(zip(*time_bounds, *dose_bounds))
 
 
-def createInjectionsTimesDoses(X_times_doses, X_injectables):
+def createInjectionsTimesDoses(X_times_doses, X_partitions, X_injectables):
     """
     Create an injections DataFrame from the stacked X vector of doses and times
     used for curve fitting.
@@ -61,8 +96,19 @@ def createInjectionsTimesDoses(X_times_doses, X_injectables):
     This doesn't include the final dummy injection! Which is fine for the purpose
     of the optimization function, but the resulting injections Series won't
     behave as expected elsewhere."""
-    n_inj = int(X_times_doses.size / 2)
-    X_times_doses = np.append(X_times_doses, X_injectables).reshape((n_inj, 3), order='F')
+    
+    n_inj = X_times_doses.size - len(X_partitions)
+    
+    times = X_times_doses[0:n_inj]
+    
+    # Unpartition the doses
+    part_doses = X_times_doses[n_inj:]
+    doses = np.zeros_like(times)
+    for p in range(len(X_partitions)):
+        for d in X_partitions[p]:
+            doses[d] = part_doses[p]
+    
+    X_times_doses = np.concatenate([times, doses, X_injectables]).reshape((n_inj, 3), order='F')
     return pharma.createInjections(X_times_doses, date_unit='D')
 
 
@@ -73,11 +119,12 @@ def createInjectionsTimesDoses(X_times_doses, X_injectables):
 # in days.
 # So, len(X) == 2*i_n.
 def fTimesAndDoses(X_times_doses,
+                   X_partitions,
                    X_injectables,
                    injectables_map,
                    target_x,
                    target_y):
-    injections = createInjectionsTimesDoses(X_times_doses, X_injectables)
+    injections = createInjectionsTimesDoses(X_times_doses, X_partitions, X_injectables)
     residuals = pharma.zeroLevelsAtMoments(target_x)
     pharma.calcInjections(residuals, injections, injectables_map)
     residuals -= target_y
@@ -88,6 +135,7 @@ def emptyResults():
     return defaultdict(lambda: {
         "injections_init": None,
         "X0": None,
+        "partitions": None,
         "bounds":None,
         "target": None,
         "result": None,
@@ -98,14 +146,16 @@ def initializeRun(injections_init,
                   target_x,
                   target_y,
                   max_dose=np.inf,
-                  time_bounds='midpoints'):
+                  time_bounds='midpoints',
+                  equal_injections=[]):
     run = {}
     run["injections_init"] = injections_init
     run["injectables_map"] = injectables_map
-    run["X0"], run["bounds"] = createInitialAndBounds(
+    run["X0"], run["partitions"], run["bounds"] = createInitialAndBounds(
         injections_init,
         max_dose=max_dose,
-        time_bounds=time_bounds)
+        time_bounds=time_bounds,
+        equal_injections=equal_injections)
     run["target"] = (target_x, target_y)
     run["result"] = None
     run["injections_optim"] = None
@@ -117,7 +167,8 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
     result = least_squares(
         fTimesAndDoses,
         run["X0"],
-        args=(X_injectables,
+        args=(run["partitions"],
+              X_injectables,
               run["injectables_map"],
               run["target"][0],
               run["target"][1]),
@@ -128,7 +179,7 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
     # Put the optimized X vector back into a DataFrame, and add back the final
     # zero injection that we dropped.
     injections_optim = pd.concat([
-        createInjectionsTimesDoses(result.x, X_injectables),
+        createInjectionsTimesDoses(result.x, run["partitions"], X_injectables),
         run["injections_init"].iloc[[-1]]])
     
     run["result"] = result
