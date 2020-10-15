@@ -1,3 +1,6 @@
 #!/bin/bash
 
-poetry run jupyter nbconvert Estradiol.ipynb Cycles.ipynb Injectables.ipynb --to html --template lab --output-dir ../transkit-pages
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+NOTEBOOKS="TransKit.ipynb Cycles.ipynb Injectables.ipynb"
+
+cd $DIR && poetry run jupyter nbconvert ${NOTEBOOKS} --to html --template lab --output-dir ../transkit-pages
