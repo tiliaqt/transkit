@@ -358,7 +358,7 @@ def calibrateInjections_lsqpoly(injections,
     X0 = np.array([0.0, 1.0])
     result = least_squares(f, X0,
                            bounds=(np.zeros_like(X0),
-                                   np.full_like(X0, np.inf)),
+                                   [np.nextafter(0.0, 1.0), np.inf]),
                            max_nfev=10,
                            verbose=0)
     calibrated_injectables[injectable] =\
