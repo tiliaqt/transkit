@@ -5,6 +5,7 @@ from matplotlib import dates as mdates
 import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
+import warnings
 
 from injectio import pharma, injectables
 
@@ -66,13 +67,11 @@ def createInitialAndBounds(injections,
     optimized, the partitions of equal-dose injections, and the bounds
     corresponding to X.
     
-    Note that this treats the last injection as a dummy value and discards it
-    for the optimization.
-    
     Returns a 3-tuple of: (
         X:          Vector of independent variables that will be optimized by
                     least_squares, represented as a stacked array of
-                    len(injections)-1 times, followed by len(partitions) doses.
+                    len(injections) times in days, followed by len(partitions)
+                    doses.
         partitions: Equal-dose partitions of injections, represented as a list
                     P of partitions, where each P[j] is a set {i_0, ..., i_k}
                     of integer indices representing the injections contained
@@ -96,21 +95,30 @@ def createInitialAndBounds(injections,
                       corresponds to injections that should be constrained to
                       have the same dose."""
     
+    if len(injections) == 0:
+        raise ValueError("Need at least 1 initial injection to optimize.")
+    elif len(injections) == 1 and time_bounds == 'midpoints':
+        time_bounds = 'fixed'
+        warnings.warn(
+                "Midpoint time bounds are only supported with more than 1"
+                "injection. Continuing with time_bounds = 'fixed'.",
+                RuntimeWarning)
+
     # least_squares works on float parameters, so convert our injection dates
     # into float days.
-    times = np.array([pharma.timeStampToDays(inj_date) for inj_date in injections.index][:-1])
+    times = np.array([pharma.timeStampToDays(inj_date) for inj_date in injections.index])
     
     if time_bounds == 'midpoints':
         # Midpoint time bound handling:
-        #   The first injection's minimum time bound is its same time
-        #   The last injection's maximum time bound is the dummy injection time
-        #   All other bounds are at the midpoints between the initial times
-        midpoints = (times[1:] + times[:-1])/2.0
-        #time_bounds = [(times[0], midpoints[0])] +\
-        #TODO: revert this^ after figuring out zeroLevelsFromInjections flooring inconsistency
-        time_bounds = [(times[0], np.nextafter(times[0], times[0]+1.0))] +\
+        #   The first injection's minimum time bound is the same distance away
+        #     as the first midpoint, but mirrored to the negative direction.
+        #   The last injection's maximum time bound is the same distance away
+        #     as the previous midpoint, but mirrored to the positive direction.
+        #   All other bounds are at the midpoints between injection times.
+        midpoints = (times[:-1] + times[1:])/2.0
+        time_bounds = [(2*times[0] - midpoints[0], midpoints[0])] +\
                       [(l, r) for l,r in zip(midpoints[:-1], midpoints[1:])] +\
-                      [(midpoints[-1], pharma.timeStampToDays(injections.index[-1]))]
+                      [(midpoints[-1], 2*times[-1] - midpoints[-1])]
     elif time_bounds == 'fixed':
         # least_squares doesn't have in-built capacity for fixed parameters,
         # and also requires each lower bound to be strictly less than each
@@ -126,7 +134,7 @@ def createInitialAndBounds(injections,
     # change through the optimization and no longer be valid indices. What we
     # later return from this function is essentially telling which doses in X
     # correspond to which times in X.
-    partitions = partitionInjections(injections[:-1], equal_injections)
+    partitions = partitionInjections(injections, equal_injections)
     part_doses = np.zeros(len(partitions))
     for p in range(len(partitions)):
         part_doses[p] = injections["dose"][partitions[p][0]]
@@ -145,10 +153,6 @@ def createInjectionsTimesDoses(X, X_partitions, X_injectables):
     Scipy's optimization functions just pass around the X vector of independent
     variables, but we need to reconstruct the full injections DataFrame to
     pass to pharma.calcInjections(...).
-    
-    This doesn't include the final dummy injection! Which is fine for the purpose
-    of the optimization function, but the resulting injections Series won't
-    behave as expected elsewhere.
     
     Returns a DataFrame of injections (see pharma.createInjections).
     
@@ -233,7 +237,7 @@ def initializeRun(injections_init,
     return run
 
 def runLeastSquares(run, max_nfev=20, **kwargs):
-    X_injectables = run["injections_init"]["injectable"][:-1].values
+    X_injectables = run["injections_init"]["injectable"].values
     
     # Residuals function
     def fTimesAndDoses(X,
@@ -260,11 +264,11 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
         max_nfev=max_nfev,
         **kwargs)
     
-    # Put the optimized X vector back into a DataFrame, and add back the final
-    # zero injection that we dropped.
-    injections_optim = pd.concat([
-        createInjectionsTimesDoses(result.x, run["partitions"], X_injectables),
-        run["injections_init"].iloc[[-1]]])
+    # Put the optimized X vector back into a DataFrame
+    injections_optim = createInjectionsTimesDoses(
+            result.x,
+            run["partitions"],
+            X_injectables)
     
     run["result"] = result
     run["injections_optim"] = injections_optim

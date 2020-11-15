@@ -151,9 +151,8 @@ def createInjectionsCycle(ef, sim_time, inj_freq, start_date=0):
     start_date  Cycle starting from this date. Can be anything parsable
                 by pd.to_datetime(...)."""
 
-    n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0)) + 1
+    n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0))
     injs = createInjections(np.array(rep_from([start_date, 1.0, ef], n=n_inj, freq=inj_freq)))
-    injs.loc[injs.iloc[[-1]].index, "dose"] = 0
     return injs
 
 def rep_from(inj, n, freq):
@@ -222,26 +221,76 @@ def rep_from_dose(date, dose, ef, n, freq):
     return [*zip(inj_dates, doses, n*[ef])]
 
 
-def zeroLevelsFromInjections(injections, sample_freq):
+def zeroLevelsFromInjections(injections, sample_freq, upper_bound='midnight'):
     """
-    Returns a Pandas series of zeros indexed by time across the entire range of
-    injections, sampled at a give frequency.
+    Intelligently create a simulation window for the injections.
 
-    The range of the returned series is big enough to include all the input
-    injections and is expanded to the nearest day in either direction such that
-    the range is large enough.
+    Returns a Pandas series of zeros indexed by time across the entire range of
+    injections, sampled at a given frequency. The range of the returned series
+    is big enough to include all the input injections. The lower bound of the
+    window is midnight (00h:00m) of the day of the first injection, and the
+    upper bound is controlled by the upper_bound parameter.
 
     Parameters:
     ===========
-    injections  DataFrame of injections (see createInjections(...)).
-    sample_freq  Sample frequency [Pandas frequency string]."""
+    injections   DataFrame of injections (see createInjections(...)).
+    sample_freq  Sample frequency [Pandas frequency string].
+    upper_bound  1- or 2-tuple specifying how to handle the upper bound of the
+                 window. The first value of the tuple is a string chooding the
+                 the method of handling, and if present the second value is the
+                 paramter to that method. Possible methods are:
+                     ('midnight', n=1): Upper bound will be midnight (00h:00m)
+                                        of the nth day following the last
+                                        injection.
+                     ('continue', n=1): Upper bound will be set as if the last
+                                        injection was repeated n times, using
+                                        the time between the last two
+                                        injections as the frequency. Requires
+                                        at least two injections.
+                    ('timedelta', t):   Upper bound will be timedelta t after
+                                        the last injection. t is required and
+                                        may be either a pandas.TimeDelta or a
+                                        number of days.
+                    ('datetime', t):    Upper bound will be exactly at time t.
+                                        t is required and can be any date
+                                        parsable by pandas.to_datetime.
+                 ('midnight') is the default method."""
 
-    # TODO: this start time handling is funky and not generalizable to different
-    # contexts this function may be used in, like the more recent optimization
-    # stuff where it results in a 1 day misalignment.
+    if isinstance(upper_bound, str):
+        upper_bound = (upper_bound,)
+
+    ub_method = upper_bound[0] if len(upper_bound) > 0 else None
+    ub_param  = upper_bound[1] if len(upper_bound) > 1 else None
+
+    if ub_method == 'midnight':
+        n = 1 if ub_param is None else ub_param
+        end_time = (injections.index[-1] + pd.to_timedelta(n, unit='D')).floor('D')
+    elif ub_method == 'continue':
+        if len(injections) < 2:
+            raise ValueError("upper_bound method 'continue' requires at least "
+                             "two injections.")
+
+        n = 1 if ub_param is None else ub_param
+        freq = injections.index[-1] - injections.index[-2]
+        end_time = injections.index[-1] + n*freq
+    elif ub_method == 'timedelta':
+        if ub_param is None:
+            raise ValueError("upper_bound method 'timedelta' requires an "
+                             "argument.")
+
+        t = pd.to_timedelta(ub_param, unit='D')
+        end_time = injections.index[-1] + t
+    elif ub_method == 'datetime':
+        if ub_param is None:
+            raise ValueError("upper_bound method 'datetime' requires an "
+                             "argument.")
+
+        end_time = pd.to_datetime(ub_param)
+    else:
+        raise ValueError("upper_bound method '{ub_method}' isn't valid.")
+
     start_time = injections.index[0].floor('D')
-    end_time   = injections.index[-1].ceil('D')
-    dates      = pd.date_range(start_time, end_time, freq=sample_freq)
+    dates = pd.date_range(start_time, end_time, freq=sample_freq)
     return pd.Series(np.zeros(len(dates)), index=dates)
 
 def zeroLevelsAtMoments(moments):
@@ -333,7 +382,8 @@ def plotInjections(fig, ax,
                    injectables,
                    estradiol_measurements=pd.DataFrame(),
                    sample_freq='1H',
-                   label=''):
+                   label='',
+                   upper_bound=('continue', 1)):
     """
     Plot the continuous, simulated curve of blood levels for a series of
     injections, along with associated blood level measurements if they exist.
@@ -342,10 +392,7 @@ def plotInjections(fig, ax,
     ===========
     injections              Injections to plot, represented as a Pandas
                             DataFrame with "dose" and "injectable" columns
-                            indexed by DateTime. See createInjections(...). By
-                            convention, the last injection is expected to be a
-                            zero-dose marker of the simulation window and is
-                            discarded.
+                            indexed by DateTime. See createInjections(...).
     injectables             Mapping of injectable name to ef function. [dict]
     estradiol_measurements  (Optional) Actual blood level measurements to plot
                             alongside the simulated curve, represented as a
@@ -355,7 +402,9 @@ def plotInjections(fig, ax,
                             continuous curve is sampled at. [Pandas frequency
                             thing]
     label                   (Optional) Matplotlib label to attach to the curve.
-                            [String]"""
+                            [String]
+    upper_bound             Upper bound of the simulation window (see
+                            pharma.zeroLevelsFromInjections(...))."""
 
     # Easy way to display a vertical line at the current time
     estradiol_measurements = pd.concat([
@@ -364,13 +413,13 @@ def plotInjections(fig, ax,
     
     # Calculate everything we'll need to plot
     e_levels = calcInjections(
-        zeroLevelsFromInjections(injections, sample_freq),
+        zeroLevelsFromInjections(injections, sample_freq, upper_bound=upper_bound),
         injections,
         injectables)
     levels_at_injections = calcInjections(
         zeroLevelsAtMoments(injections.index),
         injections,
-        injectables)[0:-1]
+        injectables)
     levels_at_measurements = calcInjections(
         zeroLevelsAtMoments(estradiol_measurements.index),
         injections,
@@ -406,7 +455,7 @@ def plotInjections(fig, ax,
     
     # Plot moments of injection as dose-scaled points on top of the simulated
     # curve, independently for each kind of injectable.
-    for injectable, group in injections[0:-1].groupby(by="injectable"):
+    for injectable, group in injections.groupby(by="injectable"):
         doses         = group["dose"].values
         norm_doses    = Normalize(vmin=-1.0*max(doses), vmax=max(doses)+0.2)(doses)
         marker_sizes  = [(9.0*dose+2.0)**2 for dose in norm_doses]
