@@ -86,7 +86,10 @@ def createInitialAndBounds(injections,
     injections        Initial injections to be optimized.
     max_dose          Maximum dose bound that will be used in the fitting.
     time_bounds       Specfies how injection times will be bounded in the
-                      fitting. Possible options are:
+                      fitting. Can either be an Iterable of strings
+                      corresponding to the time bound behavior for each
+                      injection, or a single string that will be used for all
+                      injections. Possible string options are:
                          'fixed':     the injection times will not be optimized.
                          'midpoints': the injection times will be optimized and
                                       bounded to the midpoints between their
@@ -94,41 +97,57 @@ def createInitialAndBounds(injections,
     equal_injections  A list of DatetimeIndexes where each DatetimeIndex
                       corresponds to injections that should be constrained to
                       have the same dose."""
-    
+
     if len(injections) == 0:
         raise ValueError("Need at least 1 initial injection to optimize.")
-    elif len(injections) == 1 and time_bounds == 'midpoints':
+    elif len(injections) == 1 and (time_bounds == 'midpoints' or
+                                   time_bounds == ['midpoints']):
         time_bounds = 'fixed'
         warnings.warn(
-                "Midpoint time bounds are only supported with more than 1"
+                "Midpoint time bounds are only supported with more than 1 "
                 "injection. Continuing with time_bounds = 'fixed'.",
                 RuntimeWarning)
+
+    if isinstance(time_bounds, str):
+        time_bounds = len(injections) * [time_bounds]
+    elif len(time_bounds) != len(injections):
+        raise ValueError(
+                "Expecting either a single string or an Iterable of length "
+                f"len(injections)={len(injections)} for time_bounds, but got "
+                f"{type(time_bounds)} of length {len(time_bounds)}.")
 
     # least_squares works on float parameters, so convert our injection dates
     # into float days.
     times = np.array([pharma.timeStampToDays(inj_date) for inj_date in injections.index])
-    
-    if time_bounds == 'midpoints':
-        # Midpoint time bound handling:
-        #   The first injection's minimum time bound is the same distance away
-        #     as the first midpoint, but mirrored to the negative direction.
-        #   The last injection's maximum time bound is the same distance away
-        #     as the previous midpoint, but mirrored to the positive direction.
-        #   All other bounds are at the midpoints between injection times.
-        midpoints = (times[:-1] + times[1:])/2.0
-        time_bounds = [(2*times[0] - midpoints[0], midpoints[0])] +\
+
+    # Pregenerate all the midpoint bounds even if we don't end up using them.
+    # It simplifies the loop a lot.
+    midpoints = (times[:-1] + times[1:])/2.0
+    midpoint_bounds = [(2*times[0] - midpoints[0], midpoints[0])] +\
                       [(l, r) for l,r in zip(midpoints[:-1], midpoints[1:])] +\
                       [(midpoints[-1], 2*times[-1] - midpoints[-1])]
-    elif time_bounds == 'fixed':
-        # least_squares doesn't have in-built capacity for fixed parameters,
-        # and also requires each lower bound to be strictly less than each
-        # upper bound. This is basically a hack to avoid requiring different
-        # implementations for optimizing on doses+times vs just doses, keeping
-        # the same array X of independent variables in both cases.
-        time_bounds = [(T, np.nextafter(T, T+1.0)) for T in times]
-    else:
-        raise ValueError(f"'{time_bounds}' isn't a recognized input for time_bounds")
-    
+
+    t_bounds = []
+    for ti in range(len(times)):
+        tb = time_bounds[ti]
+        if tb == 'midpoints':
+            # Midpoint time bound handling:
+            #   The first injection's minimum time bound is the same distance away
+            #     as the first midpoint, but mirrored to the negative direction.
+            #   The last injection's maximum time bound is the same distance away
+            #     as the previous midpoint, but mirrored to the positive direction.
+            #   All other bounds are at the midpoints between injection times.
+            t_bounds.append(midpoint_bounds[ti])
+        elif tb == 'fixed':
+            # least_squares doesn't have in-built capacity for fixed parameters,
+            # and also requires each lower bound to be strictly less than each
+            # upper bound. This is basically a hack to avoid requiring different
+            # implementations for optimizing on doses+times vs just doses, keeping
+            # the same array X of independent variables in both cases.
+            t_bounds.append((times[ti], np.nextafter(times[ti], times[ti]+1.0)))
+        else:
+            raise ValueError(f"'{tb}' isn't a valid input in time_bounds.")
+
     # This gives equivalence classes of Datetimes, but ultimately we need
     # equivalence classes of injection indices because the exact times will
     # change through the optimization and no longer be valid indices. What we
@@ -138,11 +157,11 @@ def createInitialAndBounds(injections,
     part_doses = np.zeros(len(partitions))
     for p in range(len(partitions)):
         part_doses[p] = injections["dose"][partitions[p][0]]
-    dose_bounds = [(0.0, max_dose)]*len(partitions)
-    
+    d_bounds = [(0.0, max_dose)]*len(partitions)
+
     return np.concatenate((times, part_doses)),\
            [{list(injections.index).index(inj) for inj in part} for part in partitions],\
-           tuple(zip(*time_bounds, *dose_bounds))
+           tuple(zip(*t_bounds, *d_bounds))
 
 
 def createInjectionsTimesDoses(X, X_partitions, X_injectables):
