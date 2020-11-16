@@ -239,21 +239,24 @@ def zeroLevelsFromInjections(injections, sample_freq, upper_bound='midnight'):
                  window. The first value of the tuple is a string chooding the
                  the method of handling, and if present the second value is the
                  paramter to that method. Possible methods are:
-                     ('midnight', n=1): Upper bound will be midnight (00h:00m)
-                                        of the nth day following the last
-                                        injection.
-                     ('continue', n=1): Upper bound will be set as if the last
+                     ('midnight', n=1): Upper bound will be the first sample
+                                        greater than midnight (00h:00m) of the
+                                        nth day following the last injection.
+                     ('continue', n=1): Upper bound will be the first sample
+                                        greater than the period as if the last
                                         injection was repeated n times, using
                                         the time between the last two
-                                        injections as the frequency. Requires
+                                        injections as the period. Requires
                                         at least two injections.
-                    ('timedelta', t):   Upper bound will be timedelta t after
-                                        the last injection. t is required and
-                                        may be either a pandas.TimeDelta or a
+                    ('timedelta', t):   Upper bound will be the first sample
+                                        greater than timedelta t after the
+                                        last injection. t is required and may
+                                        be either a pandas.TimeDelta or a
                                         number of days.
-                    ('datetime', t):    Upper bound will be exactly at time t.
-                                        t is required and can be any date
-                                        parsable by pandas.to_datetime.
+                    ('datetime', t):    Upper bound will be the first sample
+                                        greater than the time t. t is required
+                                        and can be any date parsable by
+                                        pandas.to_datetime.
                  ('midnight') is the default method."""
 
     if isinstance(upper_bound, str):
@@ -290,6 +293,16 @@ def zeroLevelsFromInjections(injections, sample_freq, upper_bound='midnight'):
         raise ValueError("upper_bound method '{ub_method}' isn't valid.")
 
     start_time = injections.index[0].floor('D')
+
+    # If our end_time isn't properly aligned, increment it by one sample
+    # period and let date_range truncate to the correctly aligned end.
+    # This ensures date_range doesn't pick an end_date that doesn't
+    # include our entire window.
+    freq_offset = pd.tseries.frequencies.to_offset(sample_freq)
+    freq_sec = (freq_offset.nanos * 1e-9)
+    if (end_time - start_time).total_seconds() % freq_sec != 0:
+        end_time = freq_offset.apply(end_time)
+
     dates = pd.date_range(start_time, end_time, freq=sample_freq)
     return pd.Series(np.zeros(len(dates)), index=dates)
 
