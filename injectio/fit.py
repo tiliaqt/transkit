@@ -118,7 +118,7 @@ def createInitialAndBounds(injections,
 
     # least_squares works on float parameters, so convert our injection dates
     # into float days.
-    times = np.array([pharma.timeStampToDays(inj_date) for inj_date in injections.index])
+    times = pharma.dateTimeToDays(injections.index)
 
     # Pregenerate all the midpoint bounds even if we don't end up using them.
     # It simplifies the loop a lot.
@@ -267,7 +267,7 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
                        exclude_area):
         injections = createInjectionsTimesDoses(X, X_partitions, X_injectables)
         residuals = pharma.zeroLevelsAtMoments(target.index)
-        pharma.calcInjections(residuals, injections, injectables_map)
+        pharma.calcInjectionsConv(residuals, injections, injectables_map)
         residuals -= target
         return residuals.drop(exclude_area)
     
@@ -296,11 +296,11 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
 
 def plotOptimizationRun(fig, ax, run):
     # Calculate levels at the initial and optimized moments of injection
-    init_levels = pharma.calcInjections(
+    init_levels = pharma.calcInjectionsExact(
         pharma.zeroLevelsAtMoments(run["injections_init"].index),
         run["injections_init"],
         run["injectables_map"])
-    optim_levels = pharma.calcInjections(
+    optim_levels = pharma.calcInjectionsExact(
         pharma.zeroLevelsAtMoments(run["injections_optim"].index),
         run["injections_optim"],
         run["injectables_map"])
@@ -371,7 +371,7 @@ def calibrateInjections_lsqpoly(injections,
     def f(X):
         calibrated_injectables[injectable] =\
             injectables.calibratedInjection(uncalibrated_injectables[injectable], X)
-        levels_at_measurements = pharma.calcInjections(
+        levels_at_measurements = pharma.calcInjectionsExact(
             pharma.zeroLevelsAtMoments(measurements.index),
             injections,
             calibrated_injectables)
@@ -414,7 +414,7 @@ def calibrateInjections_meanscale(injections,
                               function injectables[injectable] (see
                               injectio.createMeasurements())."""
     
-    levels_at_measurements = pharma.calcInjections(
+    levels_at_measurements = pharma.calcInjectionsExact(
         pharma.zeroLevelsAtMoments(measurements.index),
         injections,
         uncalibrated_injectables)

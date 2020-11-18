@@ -6,10 +6,10 @@ from matplotlib import dates as mdates
 from matplotlib import collections as mc
 from matplotlib import ticker as mticker
 from matplotlib.colors import Normalize
-from numba import jit
 import numpy as np
 import pandas as pd
-from scipy import interpolate
+from scipy import interpolate, signal
+import warnings
 
 
 injectables_markers = defaultdict(lambda: "2", {
@@ -22,11 +22,23 @@ injectables_markers = defaultdict(lambda: "2", {
 
 
 def dateTimeToDays(dt):
-    return dt.astype('double')/1.0e9/60.0/60.0/24.0
-def timeStampToDays(ts):
-    return dateTimeToDays(ts.to_datetime64())
+    if isinstance(dt, pd.DatetimeIndex) or isinstance(dt, pd.Timestamp):
+        dt = dt.to_numpy(dtype='datetime64[ns]')
+
+    return (dt.astype('datetime64[ns]').astype(np.float64)
+            * 1e-9 # ns to s
+            / 60.0 # s to min
+            / 60.0 # min to hr
+            / 24.0) # hr to days
 def timeDeltaToDays(td):
-    return td.total_seconds()/60.0/60.0/24.0
+    if isinstance(td, pd.TimedeltaIndex) or isinstance(td, pd.Timedelta):
+        td = td.to_numpy(dtype='timedelta64[ns]')
+
+    return (td.astype('timedelta64[ns]').astype(np.float64)
+            * 1e-9 # ns to s
+            / 60.0 # s to min
+            / 60.0 # min to hr
+            / 24.0) # hr to days
 
 
 def rawDVToFunc(raw):
@@ -60,21 +72,16 @@ def rawDVToFunc(raw):
     sample_y  = np.array([interp_ef(x) for x in sample_x])
     slope_lut = (sample_y[1:] - sample_y[:-1]) / (sample_x[1:] - sample_x[:-1])
 
-    @jit(nopython=True)
     def ef(x):
-        if x <= min_x or x >= max_x:
-            return 0.0
-        else:
-            idx = np.searchsorted(sample_x, x)-1
-            # sample_x[-1] == max_x, which is handled by the above conditional,
-            # so it's safe to use idx as an index into slope_lut even though
-            # it has length of len(sample_x)-1. Could possibly eliminate the
-            # conditional entirely by setting the edge values of slope_lut to 0
-            # and being tricksy with indexing.
-            return sample_y[idx] + (x - sample_x[idx])*slope_lut[idx]
+        idx = np.searchsorted(sample_x, x)-1
+        return np.where(
+                np.logical_or(x <= min_x, x >= max_x),
+                np.zeros_like(x),
+                sample_y[idx] + ((x - sample_x[idx])
+                                 * np.take(slope_lut, idx, mode='clip')))
     ef.domain = (pd.to_timedelta(min_x, unit='D'), pd.to_timedelta(max_x, unit='D'))
-    return ef
 
+    return ef
 
 def createInjections(inj_array, date_format=None, date_unit='ns'):
     """
@@ -318,52 +325,189 @@ def zeroLevelsAtMoments(moments):
     return pd.Series(np.zeros(len(moments)), index=moments)
 
 
-def calcInjections(zero_levels, injections, injectables):
+def calcInjectionsExact(zero_levels, injections, injectables):
     """
-    Compute blood levels for the given injections using a noncompartmental
-    pharmacokinetic model.
+    Compute blood levels for the given injections using a
+    noncompartmental pharmacokinetic model.
 
     Given a DataFrame of injections (injection time, injection dose, and
-    medication), this computes the simulated total blood concentration at every
-    point in time in the index of zero_levels using the medication dose-reponse
-    functions given in injectables.
+    medication), this computes the simulated total blood concentration
+    at every point in time in the index of zero_levels using the
+    medication dose-reponse functions given in injectables.
 
-    Conceptually, this additively superimposes the dose-response functions
-    shifted in time for each dose. Each dose-response function returns the total
-    blood levels contribution for a single dose of the medication, and each dose
-    contributes linearly to the total systemic blood concentraion.
+    This additively superimposes the dose-response functions shifted in
+    time for each dose. Each dose-response function returns the total
+    blood levels contribution for a single dose of the medication, and
+    each dose contributes linearly to the total systemic blood
+    concentraion. This implementation is O(N^2) in the number of
+    samples. Unlike the convolution implementation, it uses a continous
+    dose-response calculation and doesn't suffer from sample-rate
+    aliasing. This makes it well suited for computing blood levels at
+    sparse or irregular times, or in cases where the sample rate is slow
+    enough that errors in the convolution approach become untenable.
 
     This mutates the zero_levels input series and also returns it.
 
     Parameters:
     ===========
-    zero_levels   Series of zeros indexed by Datetime of times at which the
-                  total blood concentration curve curve should be sampled at.
-    injections    DataFrame of injections that specify the blood concentration
-                  curve (see createInjections(...)).
-    injectables   Dict of injectable dose-reponse functions where keys are
-                  strings corresponding with the values of the injectable
-                  column of injections (see injectables.injectables)."""
+    zero_levels   Series of zeros indexed by Datetime of times at which
+                  the total blood concentration curve curve should be
+                  sampled at.
+    injections    DataFrame of injections that specify the blood
+                  concentration curve (see createInjections(...)).
+    injectables   Dict of injectable dose-reponse functions where keys
+                  are strings corresponding with the values of the
+                  injectable column of injections (see
+                  injectables.injectables)."""
 
     for inj_date, inj_dose, inj_injectable in injections[["dose", "injectable"]].itertuples():
         inj_ef = injectables[inj_injectable]
-        
-        # If the function has a specified domain, we can use that to avoid
-        # doing work we don't need to. If it doesn't have a specified domain,
-        # don't make any assumptions about it. This allows for the seamless
-        # calculation of derivatives calculated using the scipy wrapper function.
+
+        # If the function has a specified domain, we only need to calculate
+        # levels across that. If it doesn't, then we need to calculate levels
+        # across the entire sample space.
         if hasattr(inj_ef, 'domain') and inj_ef.domain is not None:
-            # Only need to compute where inj_ef > 0. This is guaranteed to be true
-            # exactly across the domain of inj_ef, so we can save significant
-            # computation here.
-            max_T = inj_date + inj_ef.domain[1]
-            levels_range = zero_levels[inj_date:max_T].index
+            np_date = inj_date.to_numpy()
+            max_T = np_date + inj_ef.domain[1].to_numpy()
+
+            # Find where in the sample space we need to modify. Doing it this
+            # way is a lot faster than Panda's time-based slices.
+            idxs = np.searchsorted(zero_levels.index.values, [np_date, max_T])
+            level_idxs = np.arange(
+                    idxs[0],
+                    idxs[1] + (idxs[1] < len(zero_levels))) # Inclusive
+
+            zero_levels.values[level_idxs] += (inj_dose * inj_ef(timeDeltaToDays(
+                zero_levels.index.values[level_idxs] - np_date)))
         else:
-            levels_range = zero_levels.index
-        
-        for T in levels_range:
-            zero_levels[T] += inj_dose * inj_ef(timeDeltaToDays(T - inj_date))
-    
+            zero_levels += (inj_dose * inj_ef(timeDeltaToDays(
+                zero_levels.index - inj_date)))
+
+    return zero_levels
+
+def calcInjectionsConv(zero_levels, injections, injectables):
+    """
+    Compute blood levels for the given injections using a
+    noncompartmental pharmacokinetic model.
+
+    Given a DataFrame of injections (injection time, injection dose, and
+    medication), this computes the simulated total blood concentration
+    at every point in time in the index of zero_levels using the
+    medication dose-reponse functions given in injectables.
+
+    This mutates the zero_levels input series and also returns it.
+
+    The noncompartmental pharmacokinetic model is a Linear
+    Shift-Invariant system, which allows us to perform the computation
+    using the discrete convolution, which can be computed in O(NlogN) in
+    the number of samples. This makes it faster than calcInjectionsExact
+    for large numbers of samples.
+
+    The trade off of this approach is that it introduces numeric errors
+    into the results, dependent on the sample rate. Injection times must
+    be projected into the sample space, and they will not typically be
+    aligned with any samples. This creates temporal aliasing where the
+    dose-response impulses will be shifted in time to the nearest
+    sample. Similarly, the dose-response functions need to be resampled,
+    which can introduce further amplitude aliasing, especially where
+    there are sharp peaks (looking at you, Estradiol Valerate).
+
+    The error can be nearly zero if injections are aligned with samples.
+    This happens when, e.g., injection times are specified with 1 minute
+    precision, there is 1 minute between each sample, and samples are
+    aligned with the start of each minute. In pathological cases, the
+    error stays well below 1 pg/mL up to around 50 minutes between each
+    sample. With faster sample rates (below 15 minutes between each
+    sample), the error becomes negligible, below 0.1 pg/mL.
+
+    Parameters:
+    ===========
+    zero_levels   Series of zeros indexed by Datetime of times at which
+                  the total blood concentration curve curve should be
+                  sampled at. The index must be fixed-frequency and
+                  monotonically increasing.
+    injections    DataFrame of injections that specify the blood
+                  concentration curve (see createInjections(...)).
+    injectables   Dict of injectable dose-reponse functions where keys
+                  are strings corresponding with the values of the
+                  injectable column of injections (see
+                  injectables.injectables)."""
+
+    if zero_levels.index.freq is None:
+        warnings.warn(
+                "It doesn't look like zero_levels has a fixed frequency. "
+                "calcInjectionsConv requires fixed frequency samples or "
+                "the results will be incorrect!",
+                RuntimeWarning)
+
+    def project_injs(injs, samples):
+        # Find where each injection belongs in the sample space.
+        it0 = np.searchsorted(samples.index, injs.index, side='right')
+
+        # With side='right', zeros in it0 represent times that are
+        # before the beginning of the sample window.
+        if not np.all(it0):
+            raise ValueError(
+                f"Injections before the lower bound of zero_levels "
+                f" at {zero_levels.index[0]} are unsupported with "
+                f" calcInjectionsConv -- use calcInjectionsExact if "
+                f"you need this functionality, or use a bigger window.")
+
+        it0 -= 1
+        t0 = samples.index[it0]
+        it1 = it0 + (t0 < injs.index)
+
+        # Drop any injections that are after the sample window.
+        in_window = it1 < len(samples)
+        it0 = it0[in_window]
+        it1 = it1[in_window]
+        t0 = t0[in_window]
+        t1 = samples.index[it1]
+
+        # Improve temporal aliasing by proportionally splitting the
+        # injection dose between the two adjacent samples.
+        dt = (t1 - t0).to_numpy()
+        p = np.divide((injs.index[in_window] - t0).to_numpy(), dt,
+                      out=np.zeros_like(dt, dtype=np.float64),
+                      where=(dt != pd.to_timedelta(0))).astype(np.float64)
+
+        inj_doses = injs[["dose"]].values[:,0][in_window]
+        doses = np.zeros(len(samples), dtype=np.float64)
+        np.add.at(doses, it0, inj_doses * (1 - p))
+        np.add.at(doses, it1, inj_doses * p)
+
+        return doses
+
+    def resample_ef(inj_ef, samples):
+        if hasattr(inj_ef, 'domain') and inj_ef.domain is not None:
+            min_T = samples.index[0] + inj_ef.domain[0]
+            max_T = samples.index[0] + inj_ef.domain[1]
+            ef_range = samples[min_T:max_T].index
+        else:
+            ef_range = samples.index
+
+        return inj_ef(timeDeltaToDays(ef_range - ef_range[0]))
+
+    # We run one convolution for each injectable, and combine the results.
+    grp_injectables = injections.groupby(by="injectable")
+    for injectable_idx, (injectable, group) in zip(
+            range(len(grp_injectables)), grp_injectables):
+        # First, project the injections into the sample space.
+        doses = project_injs(group, zero_levels)
+
+        # Next, resample the dose response function into our sample space
+        # to create the kernel for the convolution.
+        inj_ef = injectables[injectable]
+        dose_response = resample_ef(inj_ef, zero_levels)
+
+        # Now do the convolution!
+        zero_levels += pd.Series(
+                signal.convolve(
+                    doses,
+                    dose_response,
+                    mode='full')[0:len(zero_levels)],
+                index=zero_levels.index)
+
     return zero_levels
 
 
@@ -394,7 +538,7 @@ def plotInjections(fig, ax,
                    injections,
                    injectables,
                    estradiol_measurements=pd.DataFrame(),
-                   sample_freq='1H',
+                   sample_freq='15min',
                    label='',
                    upper_bound=('continue', 1)):
     """
@@ -425,15 +569,15 @@ def plotInjections(fig, ax,
         createMeasurements(np.array([[pd.Timestamp.now(), -10.0, np.nan]]))])
     
     # Calculate everything we'll need to plot
-    e_levels = calcInjections(
+    e_levels = calcInjectionsConv(
         zeroLevelsFromInjections(injections, sample_freq, upper_bound=upper_bound),
         injections,
         injectables)
-    levels_at_injections = calcInjections(
+    levels_at_injections = calcInjectionsExact(
         zeroLevelsAtMoments(injections.index),
         injections,
         injectables)
-    levels_at_measurements = calcInjections(
+    levels_at_measurements = calcInjectionsExact(
         zeroLevelsAtMoments(estradiol_measurements.index),
         injections,
         injectables)

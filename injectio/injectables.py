@@ -1,5 +1,4 @@
 import numpy as np
-from numpy.polynomial import Polynomial
 import pandas as pd
 
 from injectio import pharma
@@ -12,14 +11,14 @@ def normalizedInjection(ef, ef_dose):
 
 def calibratedInjection(ef, X):
     """
-    Wraps the injectable function ef and transforms it by the linear power
-    series specified by polynomial coefficients in ndarray X, such that:
+    Wraps the injectable function ef and transforms it by the linear
+    power series specified by the first-order polynomial coefficients in
+    ndarray X, such that:
     
-        calibratedInjection(ef, X)(T) = X[0] + X[1]*ef(T) + ... + X[n]*ef(T)**n
+        calibratedInjection(ef, X)(T) = X[0] + X[1]*ef(T)
     """
-    
-    poly = Polynomial(X)
-    ef_cali = lambda T: poly(ef(T))
+
+    ef_cali = lambda T: X[0] + X[1]*ef(T)
     ef_cali.domain = ef.domain
     return ef_cali
 
@@ -97,8 +96,8 @@ ev_level_5mg = np.array([
 ef_ev_5mg = pharma.rawDVToFunc(ev_level_5mg)
 ef_ev_5mg_norm = normalizedInjection(ef_ev_5mg, 5.0)
 
-pill_zero = lambda T: 0.0
-pill_zero.domain = (pd.to_timedelta(0.0, unit='D'), pd.to_timedelta(0.0, unit='D'))
+pill_zero = lambda T: 0.0*T
+pill_zero.domain = (pd.to_timedelta(0.0, unit='D'), pd.to_timedelta(1.0, unit='D'))
 
 injectables = {
     "ec": ef_ec_1mg,
