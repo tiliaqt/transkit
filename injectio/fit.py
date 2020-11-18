@@ -34,7 +34,7 @@ def partitionInjections(injections, equal_injections):
     equal_injections  Sequence of DatetimeIndexes where each DatetimeIndex
                       corresponds to injections that are defined to have equal
                       doses."""
-    
+
     def areEquivalent(sa, sb, eq_sets):
         for eq in eq_sets:
             if not sa.isdisjoint(eq) and not sb.isdisjoint(eq):
@@ -44,7 +44,7 @@ def partitionInjections(injections, equal_injections):
     # This implementation is O(n**2)–worse than the optimal O(n*log(n)) of a
     # disjoint set forest–but the number of injections n will generally be
     # small, and this is a lot simpler!
-    
+
     eq_sets = [set(e) for e in equal_injections]
     partitions = [{inj} for inj in injections.index]
     p = 0
@@ -185,18 +185,18 @@ def createInjectionsTimesDoses(X, X_partitions, X_injectables):
     X_injectables   Column of injectables corresponding to each injection,
                     exactly as it was in the original injections DataFrame
                     (except for the discarded final injection)."""
-    
+
     n_inj = X.size - len(X_partitions)
-    
+
     times = X[0:n_inj]
-    
+
     # Unpartition the doses
     part_doses = X[n_inj:]
     doses = np.zeros_like(times)
     for p in range(len(X_partitions)):
         for d in X_partitions[p]:
             doses[d] = part_doses[p]
-    
+
     return pharma.createInjections(
         np.concatenate([times, doses, X_injectables]).reshape((n_inj, 3), order='F'),
         date_unit='D')
@@ -257,7 +257,7 @@ def initializeRun(injections_init,
 
 def runLeastSquares(run, max_nfev=20, **kwargs):
     X_injectables = run["injections_init"]["injectable"].values
-    
+
     # Residuals function
     def fTimesAndDoses(X,
                        X_partitions,
@@ -270,7 +270,7 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
         pharma.calcInjectionsConv(residuals, injections, injectables_map)
         residuals -= target
         return residuals.drop(exclude_area)
-    
+
     result = least_squares(
         fTimesAndDoses,
         run["X0"],
@@ -282,16 +282,16 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
         bounds=run["bounds"],
         max_nfev=max_nfev,
         **kwargs)
-    
+
     # Put the optimized X vector back into a DataFrame
     injections_optim = createInjectionsTimesDoses(
             result.x,
             run["partitions"],
             X_injectables)
-    
+
     run["result"] = result
     run["injections_optim"] = injections_optim
-    
+
     return result
 
 def plotOptimizationRun(fig, ax, run):
@@ -304,12 +304,12 @@ def plotOptimizationRun(fig, ax, run):
         pharma.zeroLevelsAtMoments(run["injections_optim"].index),
         run["injections_optim"],
         run["injectables_map"])
-    
+
     ax.plot(run["target"], label="Target Curve")
     ax.plot(run["target"][run["exclude_area"]],
             marker='o',
             color=(1.0, 0.1, 0.1, 0.5),
-            label="excluded from fit")
+            label="excluded from residuals")
     pharma.plotInjections(
         fig, ax,
         run["injections_init"],
@@ -322,7 +322,7 @@ def plotOptimizationRun(fig, ax, run):
         run["injectables_map"],
         sample_freq='6H',
         label="Optimized solution")
-    
+
     # Draw lines between the initial injections and the optimized injections
     init_points = [
         (mdates.date2num(T), level) for T,level in init_levels.items()]
@@ -333,7 +333,7 @@ def plotOptimizationRun(fig, ax, run):
     lc = mc.LineCollection(lines, linestyles='dotted', zorder=10)
     ax.add_collection(lc);
     ax.legend();
-    
+
     ax.set_xlim((mdates.date2num(run["target"].index[0]),
                  mdates.date2num(run["target"].index[-1])))
 
@@ -364,9 +364,9 @@ def calibrateInjections_lsqpoly(injections,
                               to the actual dose response of the to-be-calibrated
                               function injectables[injectable] (see
                               injectio.createMeasurements())."""
-    
+
     calibrated_injectables = dict(uncalibrated_injectables)
-    
+
     # Residuals function
     def f(X):
         calibrated_injectables[injectable] =\
@@ -376,7 +376,7 @@ def calibrateInjections_lsqpoly(injections,
             injections,
             calibrated_injectables)
         return levels_at_measurements - measurements["value"]
-    
+
     # Initial condition is un-transformed ef(T)
     X0 = np.array([0.0, 1.0])
     result = least_squares(f, X0,
@@ -413,14 +413,14 @@ def calibrateInjections_meanscale(injections,
                               to the actual dose response of the to-be-calibrated
                               function injectables[injectable] (see
                               injectio.createMeasurements())."""
-    
+
     levels_at_measurements = pharma.calcInjectionsExact(
         pharma.zeroLevelsAtMoments(measurements.index),
         injections,
         uncalibrated_injectables)
-    
+
     cali_X = np.array([0.0, (measurements["value"] / levels_at_measurements).mean()])
-    
+
     calibrated_injectables = dict(uncalibrated_injectables)
     calibrated_injectables[injectable] = injectables.calibratedInjection(
         uncalibrated_injectables[injectable], cali_X)

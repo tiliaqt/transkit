@@ -41,47 +41,9 @@ def timeDeltaToDays(td):
             / 24.0) # hr to days
 
 
-def rawDVToFunc(raw):
-    """
-    Converts an ndarray of flaot(Day),float(pg/mL) pairs into an interpolated
-    function ef:
 
-        ef(time_since_injection [Days]) = blood concentration [pg/mL]
-
-    representing the instantaneous total blood concentration of the medication
-    at the given time after administration.
-
-    Expects two zero values at both the start and end, used to tweak the slope
-    of the interpolated curve to end at 0.0. Ef must be positive and continuous
-    across the domain of the input data, and equal to 0.0 outside that domain.
-    This is required for later computations using this function to operate
-    correctly.
-
-    The returned function ef is called in the inner loop of all subsequent
-    computations, so it is heavily optimized for performance by constructing
-    lookup tables of the interpolated function. LUT table sizes < 100000 seem
-    to make first derivatives of ef get wiggly."""
-
-    interp_ef = interpolate.interp1d(raw[:,0], raw[:,1],
-                                     kind='cubic',
-                                     fill_value=(0.0, 0.0),
-                                     bounds_error=False)
-    min_x = raw[1,0]
-    max_x = raw[-2,0]
-    sample_x  = np.linspace(min_x, max_x, num=100000)
-    sample_y  = np.array([interp_ef(x) for x in sample_x])
-    slope_lut = (sample_y[1:] - sample_y[:-1]) / (sample_x[1:] - sample_x[:-1])
-
-    def ef(x):
-        idx = np.searchsorted(sample_x, x)-1
-        return np.where(
-                np.logical_or(x <= min_x, x >= max_x),
-                np.zeros_like(x),
-                sample_y[idx] + ((x - sample_x[idx])
-                                 * np.take(slope_lut, idx, mode='clip')))
-    ef.domain = (pd.to_timedelta(min_x, unit='D'), pd.to_timedelta(max_x, unit='D'))
-
-    return ef
+###################################
+### Injection Creation Routines ###
 
 def createInjections(inj_array, date_format=None, date_unit='ns'):
     """
@@ -145,6 +107,7 @@ def createMeasurements(measurements_array, date_format=None, date_unit='ns'):
     df.loc[:, "value"] = df["value"].apply(pd.to_numeric)
     return df
 
+
 def createInjectionsCycle(ef, sim_time, inj_freq, start_date=0):
     """
     Creates a DataFrame of injections for a particular injectable that cycles
@@ -161,6 +124,7 @@ def createInjectionsCycle(ef, sim_time, inj_freq, start_date=0):
     n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0))
     injs = createInjections(np.array(rep_from([start_date, 1.0, ef], n=n_inj, freq=inj_freq)))
     return injs
+
 
 def rep_from(inj, n, freq):
     """
@@ -190,6 +154,7 @@ def rep_from(inj, n, freq):
         inj_dates.append(inj_dates[-1] + o)
 
     return [*zip(inj_dates, n*[inj[1]], n*[inj[2]])]
+
 
 def rep_from_dose(date, dose, ef, n, freq):
     """
@@ -313,6 +278,7 @@ def zeroLevelsFromInjections(injections, sample_freq, upper_bound='midnight'):
     dates = pd.date_range(start_time, end_time, freq=sample_freq)
     return pd.Series(np.zeros(len(dates)), index=dates)
 
+
 def zeroLevelsAtMoments(moments):
     """
     Returns a Pandas Series of zeros indexed by the input.
@@ -324,6 +290,10 @@ def zeroLevelsAtMoments(moments):
 
     return pd.Series(np.zeros(len(moments)), index=moments)
 
+
+
+###################################
+### Pharmacokinetic Computation ###
 
 def calcInjectionsExact(zero_levels, injections, injectables):
     """
@@ -384,6 +354,7 @@ def calcInjectionsExact(zero_levels, injections, injectables):
                 zero_levels.index - inj_date)))
 
     return zero_levels
+
 
 def calcInjectionsConv(zero_levels, injections, injectables):
     """
@@ -511,16 +482,63 @@ def calcInjectionsConv(zero_levels, injections, injectables):
     return zero_levels
 
 
+def rawDVToFunc(raw):
+    """
+    Converts an ndarray of flaot(Day),float(pg/mL) pairs into an interpolated
+    function ef:
+
+        ef(time_since_injection [Days]) = blood concentration [pg/mL]
+
+    representing the instantaneous total blood concentration of the medication
+    at the given time after administration.
+
+    Expects two zero values at both the start and end, used to tweak the slope
+    of the interpolated curve to end at 0.0. Ef must be positive and continuous
+    across the domain of the input data, and equal to 0.0 outside that domain.
+    This is required for later computations using this function to operate
+    correctly.
+
+    The returned function ef is called in the inner loop of all subsequent
+    computations, so it is heavily optimized for performance by constructing
+    lookup tables of the interpolated function. LUT table sizes < 100000 seem
+    to make first derivatives of ef get wiggly."""
+
+    interp_ef = interpolate.interp1d(raw[:,0], raw[:,1],
+                                     kind='cubic',
+                                     fill_value=(0.0, 0.0),
+                                     bounds_error=False)
+    min_x = raw[1,0]
+    max_x = raw[-2,0]
+    sample_x  = np.linspace(min_x, max_x, num=100000)
+    sample_y  = np.array([interp_ef(x) for x in sample_x])
+    slope_lut = (sample_y[1:] - sample_y[:-1]) / (sample_x[1:] - sample_x[:-1])
+
+    def ef(x):
+        idx = np.searchsorted(sample_x, x)-1
+        return np.where(
+                np.logical_or(x <= min_x, x >= max_x),
+                np.zeros_like(x),
+                sample_y[idx] + ((x - sample_x[idx])
+                                 * np.take(slope_lut, idx, mode='clip')))
+    ef.domain = (pd.to_timedelta(min_x, unit='D'), pd.to_timedelta(max_x, unit='D'))
+
+    return ef
+
+
+
+################
+### Plotting ###
+
 def startPlot():
     fig, ax_pri = pyplot.subplots(figsize=[15, 12], dpi=150)
-    
+
     ax_pri.set_axisbelow(True)
     ax_pri.set_zorder(0)
-    
+
     ax_pri.set_xlabel('Date')
     ax_pri.set_ylabel('Estradiol (pg/mL)')
     ax_pri.xaxis_date()
-    
+
     ax_pri.xaxis.set_major_locator(mdates.MonthLocator())
     ax_pri.xaxis.set_major_formatter(mdates.DateFormatter("1%Y.%b.%d.%H%M"))
     ax_pri.xaxis.set_minor_locator(mdates.DayLocator(bymonthday=range(1, 32, 3)))
@@ -528,11 +546,12 @@ def startPlot():
     ax_pri.tick_params(which='major', axis='x', labelrotation=-45, pad=12)
     pyplot.setp(ax_pri.xaxis.get_majorticklabels(), ha="left")
     ax_pri.tick_params(which='minor', axis='x', labelrotation=-90, labelsize=6)
-    
+
     ax_pri.grid(which='major', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
     ax_pri.grid(which='minor', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.2)
-    
+
     return fig, ax_pri
+
 
 def plotInjections(fig, ax,
                    injections,
@@ -567,7 +586,7 @@ def plotInjections(fig, ax,
     estradiol_measurements = pd.concat([
         estradiol_measurements,
         createMeasurements(np.array([[pd.Timestamp.now(), -10.0, np.nan]]))])
-    
+
     # Calculate everything we'll need to plot
     e_levels = calcInjectionsConv(
         zeroLevelsFromInjections(injections, sample_freq, upper_bound=upper_bound),
@@ -581,21 +600,21 @@ def plotInjections(fig, ax,
         zeroLevelsAtMoments(estradiol_measurements.index),
         injections,
         injectables)
-    
+
     # The primary axis displays absolute date.
     ax_pri = ax
-    
+
     # matplotlib uses *FLOAT DAYS SINCE EPOCH* to represent dates.
     # set_xlim can take a pd DateTime, but converts it to that ^
     ax_pri.set_xlim((mdates.date2num(e_levels.index[0]),
                      mdates.date2num(e_levels.index[-1])))
-    
+
     # The secondary axis displays relative date in days.
     def mdate2reldays(X):
         return np.array([d - mdates.date2num(e_levels.index[0]) for d in X])
     def reldays2mdate(X):
         return np.array([mdates.date2num(e_levels.index[0]) + d for d in X])
-    
+
     ax_sec = ax_pri.secondary_xaxis('top', functions=(mdate2reldays, reldays2mdate))
     ax_sec.set_xlabel("Time (days)")
     ax_sec.set_xticks(np.arange(0.0,
@@ -603,13 +622,13 @@ def plotInjections(fig, ax,
                                 9.0))
     ax_sec.xaxis.set_minor_locator(mticker.AutoMinorLocator(n=3))
     ax_sec.tick_params(axis='x', labelrotation=45)
-    
+
     # Plot simulated curve
     ax_pri.plot(e_levels.index,
                 e_levels.values,
                 label=label,
                 zorder=1)
-    
+
     # Plot moments of injection as dose-scaled points on top of the simulated
     # curve, independently for each kind of injectable.
     for injectable, group in injections.groupby(by="injectable"):
@@ -626,7 +645,7 @@ def plotInjections(fig, ax,
                        zorder=2,
                        label=f"{injectable} inj")
     ax_pri.legend()
-    
+
     # Plot measured blood levels
     ax_pri.plot(estradiol_measurements.index,
                 estradiol_measurements["value"].values,
@@ -637,11 +656,11 @@ def plotInjections(fig, ax,
         (mdates.date2num(d), m) for d,m in estradiol_measurements["value"].items()]
     levels_at_measurements_points = [
         (mdates.date2num(d), m) for d,m in levels_at_measurements.items()]
-    
+
     lines = list(zip(measurements_points, levels_at_measurements_points))
     lc = mc.LineCollection(lines, linestyles=(0, (2, 3)), colors=(0.7, 0.3, 0.3, 1.0), zorder=3)
     ax_pri.add_collection(lc);
-    
+
     for line in lines:
         # if length of line in figure coords is > length of text in figure
         # coords, then draw the text at the midpoint of the line. We assume
@@ -657,7 +676,7 @@ def plotInjections(fig, ax,
             color=(0.7, 0.3, 0.3, 1.0),
             zorder=3,
             clip_on=True)
-        
+
         # elif length of line in display coords is <= length of text in display
         # coords, then draw the text above or below the line segment, with
         # ha="center".
@@ -672,7 +691,7 @@ def plotInjections(fig, ax,
                 txt.set_va("top")
             txt.set_ha("center")
 
-    
+
 def plotInjectionFrequencies(fig, ax, ef, sim_time, sim_freq, inj_freqs):
     """
     Plot multiple injection curves for a range of injection frequencies.
