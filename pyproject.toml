@@ -5,12 +5,11 @@ description = ""
 authors = ["Violet Nēšana <violet@nesana.org>"]
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "3.8"
 jupyterlab = "^2.1.5"
 matplotlib = "^3.3.1"
-numba = "^0.51.2"
 scipy = "^1.5.1"
-numpy = "^1.19.0"
+numpy = "^1.18.0"
 pandas = "^1.0.5"
 
 [tool.poetry.dev-dependencies]
