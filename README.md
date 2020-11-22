@@ -17,7 +17,7 @@ To start Jupyter, run:
 > poetry run jupyter lab
 ```
 
-`TransKit.ipynb` is a notebook using sample injections data demonstrating basic usage.
+`notebooks/TransKit.ipynb` is a notebook using sample injections data demonstrating basic usage.
 
 I keep my own hormonal data in a different repository, checked out in a parallel directory to this one.
 My directory structure looks like this:
@@ -28,10 +28,12 @@ hormones/
         Estradiol.ipynb -- personal notebook
         transition.py   -- my injections data
     transkit/
-        TransKit.ipynb
+        notebooks/
+            TransKit.ipynb
+            ...
         lab.sh
         publish.sh
-        <etc>
+        ...
     transkit-pages/
         <html files>
 ```
@@ -43,7 +45,8 @@ It outputs the html files to the `../trankit-pages` directory, and expects that 
 
 ## Developing
 
-TransKit uses [Black](https://github.com/psf/black) for code formatting and [Flake8](https://flake8.pycqa.org/en/latest/) for linting. They're set up to run in a pre-commit hook.
+TransKit uses [Black](https://github.com/psf/black) for code formatting and [Flake8](https://flake8.pycqa.org/en/latest/) for linting.
+They're set up to run in a pre-commit hook.
 
 After installing dependencies with poetry, run:
 
@@ -57,10 +60,9 @@ Then, all the required checks will run before you can commit. You can also manua
 > poetry run pre-commit run --all-files
 ```
 
-If the formatting checks fail, run:
-
-```
-> poetry run black .
-```
-
-To automatically reformat Python files as needed.
+We also use [jupytext](https://github.com/mwouts/jupytext) to allow Jupyter notebooks to be represented as plain-text markdown files.
+The `notebooks/*.md` files represent the input text of each notebook.
+The `notebooks/*.ipynb` notebook files are paired with them and represent the full notebook, including output.
+You can open either in Jupyter Lab and the changes will be synced between them.
+We commit both files to benefit from the usable diffs of markdown files, and from the accessible viewing of the ipynb files.
+The pre-commit hook ensures that they are in sync.

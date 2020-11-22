@@ -3,11 +3,16 @@ repos:
     hooks:
       - id: black
         name: Black
-        entry: poetry run black --check
+        entry: poetry run black
         files: (transkit|tools)/.*\.pyi?$
         language: system
       - id: flake8
         name: Flake8
         entry: poetry run flake8
         files: (transkit|tools)/.*\.pyi?$
+        language: system
+      - id: jupytext
+        name: Jupytext Sync
+        entry: poetry run jupytext --sync
+        files: .ipynb$
         language: system

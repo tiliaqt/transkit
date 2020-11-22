@@ -462,12 +462,47 @@ requests = "*"
 test = ["pytest", "requests"]
 
 [[package]]
+name = "jupytext"
+version = "1.7.1"
+description = "Jupyter notebooks as Markdown documents, Julia, Python or R scripts"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.dependencies]
+markdown-it-py = {version = ">=0.5.2,<0.6.0", markers = "python_version >= \"3.6\""}
+nbformat = ">=4.0.0"
+pyyaml = "*"
+toml = "*"
+
+[package.extras]
+rst2md = ["sphinx-gallery (>=0.7.0,<0.8.0)"]
+toml = ["toml"]
+
+[[package]]
 name = "kiwisolver"
 version = "1.3.1"
 description = "A fast implementation of the Cassowary constraint solver"
 category = "main"
 optional = false
 python-versions = ">=3.6"
+
+[[package]]
+name = "markdown-it-py"
+version = "0.5.6"
+description = "Python port of markdown-it. Markdown parsing, done right!"
+category = "main"
+optional = false
+python-versions = "~=3.6"
+
+[package.dependencies]
+attrs = ">=19,<21"
+
+[package.extras]
+code_style = ["pre-commit (==2.6)"]
+compare = ["commonmark (>=0.9.1,<0.10.0)", "markdown (>=3.2.2,<3.3.0)", "mistune (>=0.8.4,<0.9.0)", "mistletoe-ebp (>=0.10.0,<0.11.0)", "panflute (>=1.12,<2.0)"]
+rtd = ["myst-nb (>=0.10.0,<0.11.0)", "sphinx-book-theme", "sphinx-panels (>=0.4.0,<0.5.0)", "sphinx-copybutton", "sphinx (>=2,<4)", "pyyaml"]
+testing = ["coverage", "pytest (>=3.6,<4)", "pytest-cov", "pytest-regressions", "pytest-benchmark (>=3.2,<4.0)", "psutil"]
 
 [[package]]
 name = "markupsafe"
@@ -862,7 +897,7 @@ python-versions = "*"
 name = "pyyaml"
 version = "5.3.1"
 description = "YAML parser and emitter for Python"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
@@ -959,7 +994,7 @@ test = ["pathlib2"]
 name = "toml"
 version = "0.10.2"
 description = "Python Library for Tom's Obvious, Minimal Language"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
 
@@ -1067,7 +1102,7 @@ testing = ["pytest (>=3.5,!=3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.6.1"
-content-hash = "f30564ce2d582a65cb697637fc6adec4ac67bc0cafa1347eb161d2e702aac4a0"
+content-hash = "13df75d553a7e1ab6c4fb49fc9c6c28c519ee46d2fb53709a7e8dbf9108498e8"
 
 [metadata.files]
 appdirs = [
@@ -1269,6 +1304,10 @@ jupyterlab-server = [
     {file = "jupyterlab_server-1.2.0-py3-none-any.whl", hash = "sha256:55d256077bf13e5bc9e8fbd5aac51bef82f6315111cec6b712b9a5ededbba924"},
     {file = "jupyterlab_server-1.2.0.tar.gz", hash = "sha256:5431d9dde96659364b7cc877693d5d21e7b80cea7ae3959ecc2b87518e5f5d8c"},
 ]
+jupytext = [
+    {file = "jupytext-1.7.1-py3-none-any.whl", hash = "sha256:e48f57afdc807cc2d2920bd6ae18455264db78b1fc78061ad70dcc26dc45a2cb"},
+    {file = "jupytext-1.7.1.tar.gz", hash = "sha256:23123b90c267c67716fe6a022dfae49b84fd3809370d83211f2920eb3106bf40"},
+]
 kiwisolver = [
     {file = "kiwisolver-1.3.1-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:fd34fbbfbc40628200730bc1febe30631347103fc8d3d4fa012c21ab9c11eca9"},
     {file = "kiwisolver-1.3.1-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:d3155d828dec1d43283bd24d3d3e0d9c7c350cdfcc0bd06c0ad1209c1bbc36d0"},
@@ -1302,6 +1341,10 @@ kiwisolver = [
     {file = "kiwisolver-1.3.1-pp36-pypy36_pp73-manylinux2010_x86_64.whl", hash = "sha256:33449715e0101e4d34f64990352bce4095c8bf13bed1b390773fc0a7295967b3"},
     {file = "kiwisolver-1.3.1-pp36-pypy36_pp73-win32.whl", hash = "sha256:401a2e9afa8588589775fe34fc22d918ae839aaaf0c0e96441c0fdbce6d8ebe6"},
     {file = "kiwisolver-1.3.1.tar.gz", hash = "sha256:950a199911a8d94683a6b10321f9345d5a3a8433ec58b217ace979e18f16e248"},
+]
+markdown-it-py = [
+    {file = "markdown-it-py-0.5.6.tar.gz", hash = "sha256:6143d11221495edbf71beb7e455821ae6c8f0156710a1b11812662ed6dbd165b"},
+    {file = "markdown_it_py-0.5.6-py3-none-any.whl", hash = "sha256:dcfe4a0c6bef711cb6c42494ebf23a3cfe6f249bf995556498497dd8193bfc22"},
 ]
 markupsafe = [
     {file = "MarkupSafe-1.1.1-cp27-cp27m-macosx_10_6_intel.whl", hash = "sha256:09027a7803a62ca78792ad89403b1b7a73a01c8cb65909cd876f7fcebd79b161"},
