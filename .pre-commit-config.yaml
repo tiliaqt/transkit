@@ -1,0 +1,13 @@
+repos:
+  - repo: local
+    hooks:
+      - id: black
+        name: Black
+        entry: poetry run black --check
+        files: (transkit|tools)/.*\.pyi?$
+        language: system
+      - id: flake8
+        name: Flake8
+        entry: poetry run flake8
+        files: (transkit|tools)/.*\.pyi?$
+        language: system

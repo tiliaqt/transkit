@@ -1,0 +1,15 @@
+[flake8]
+max-line-length = 79
+extend-ignore = 
+    # E203 whitespace before ':'
+    E203,
+    # E266 too many leading '#' for block comment
+    E266
+filename =
+    *transkit/*.py,
+    *tools/*.py
+exclude =
+    .git,
+    __pycache__,
+    .ipynb_checkpoints,
+    .DS_Store

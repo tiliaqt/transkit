@@ -12,40 +12,49 @@ from scipy import signal
 import warnings
 
 
-medication_markers = defaultdict(lambda: "2", {
-    "ec": "2",
-    "ev": "1",
-    "pill-oral": ".",
-    "pill-subl": ".",
-    "pill-bucc": ".",
-})
+medication_markers = defaultdict(
+    lambda: "2",
+    {
+        "ec": "2",
+        "ev": "1",
+        "pill-oral": ".",
+        "pill-subl": ".",
+        "pill-bucc": ".",
+    },
+)
 
 
 def dateTimeToDays(dt):
     if isinstance(dt, pd.DatetimeIndex) or isinstance(dt, pd.Timestamp):
-        dt = dt.to_numpy(dtype='datetime64[ns]')
+        dt = dt.to_numpy(dtype="datetime64[ns]")
 
-    return (dt.astype('datetime64[ns]').astype(np.float64)
-            * 1e-9 # ns to s
-            / 60.0 # s to min
-            / 60.0 # min to hr
-            / 24.0) # hr to days
+    return (
+        dt.astype("datetime64[ns]").astype(np.float64)
+        * 1e-9  # ns to s
+        / 60.0  # s to min
+        / 60.0  # min to hr
+        / 24.0  # hr to days
+    )
+
+
 def timeDeltaToDays(td):
     if isinstance(td, pd.TimedeltaIndex) or isinstance(td, pd.Timedelta):
-        td = td.to_numpy(dtype='timedelta64[ns]')
+        td = td.to_numpy(dtype="timedelta64[ns]")
 
-    return (td.astype('timedelta64[ns]').astype(np.float64)
-            * 1e-9 # ns to s
-            / 60.0 # s to min
-            / 60.0 # min to hr
-            / 24.0) # hr to days
-
+    return (
+        td.astype("timedelta64[ns]").astype(np.float64)
+        * 1e-9  # ns to s
+        / 60.0  # s to min
+        / 60.0  # min to hr
+        / 24.0  # hr to days
+    )
 
 
 ###################################
 ### Doses Creation Routines ###
 
-def createDoses(dose_array, date_format=None, date_unit='ns'):
+
+def createDoses(dose_array, date_format=None, date_unit="ns"):
     """
     Create a DataFrame of medication doses for use in computation.
 
@@ -70,14 +79,18 @@ def createDoses(dose_array, date_format=None, date_unit='ns'):
     date_unit    Passed through to the unit parameter of
                  pandas.to_datetime(...)."""
 
-    df = pd.DataFrame(dose_array[:,1:3],
-                      index=pd.to_datetime(dose_array[:,0], format=date_format, unit=date_unit),
-                      columns=["dose", "medication"])
+    df = pd.DataFrame(
+        dose_array[:, 1:3],
+        index=pd.to_datetime(
+            dose_array[:, 0], format=date_format, unit=date_unit
+        ),
+        columns=["dose", "medication"],
+    )
     df.loc[:, "dose"] = df["dose"].apply(pd.to_numeric)
     return df
 
 
-def createMeasurements(measurements_array, date_format=None, date_unit='ns'):
+def createMeasurements(measurements_array, date_format=None, date_unit="ns"):
     """
     Create a DataFrame of measurements for use in computation.
 
@@ -102,9 +115,13 @@ def createMeasurements(measurements_array, date_format=None, date_unit='ns'):
     date_unit           Passed through to the unit parameter of
                         pandas.to_datetime(...)."""
 
-    df = pd.DataFrame(measurements_array[:,1:3],
-                      index=pd.to_datetime(measurements_array[:,0], format=date_format, unit=date_unit),
-                      columns=["value", "method"])
+    df = pd.DataFrame(
+        measurements_array[:, 1:3],
+        index=pd.to_datetime(
+            measurements_array[:, 0], format=date_format, unit=date_unit
+        ),
+        columns=["value", "method"],
+    )
     df.loc[:, "value"] = df["value"].apply(pd.to_numeric)
     return df
 
@@ -123,10 +140,18 @@ def createDosesCycle(ef, sim_time, dose_freq, start_date=0):
                 by pd.to_datetime(...)."""
 
     n_doses = math.ceil(
-            sim_time / (pd.tseries.frequencies.to_offset(dose_freq).nanos
-                        * 1.0e-9 / 60.0 / 60.0 / 24.0))
-    doses = createDoses(np.array(
-        rep_from([start_date, 1.0, ef], n=n_doses, freq=dose_freq)))
+        sim_time
+        / (
+            pd.tseries.frequencies.to_offset(dose_freq).nanos
+            * 1.0e-9
+            / 60.0
+            / 60.0
+            / 24.0
+        )
+    )
+    doses = createDoses(
+        np.array(rep_from([start_date, 1.0, ef], n=n_doses, freq=dose_freq))
+    )
     return doses
 
 
@@ -152,13 +177,15 @@ def rep_from(dose, n, freq):
     if isinstance(freq, str) or not isinstance(freq, Iterable):
         freq = (freq,)
 
-    offsets = [pd.tseries.frequencies.to_offset(f)
-            for f in (math.floor(n / len(freq)) * freq)[0:n]]
+    offsets = [
+        pd.tseries.frequencies.to_offset(f)
+        for f in (math.floor(n / len(freq)) * freq)[0:n]
+    ]
     dose_dates = [pd.to_datetime(dose[0])]
     for o in offsets:
         dose_dates.append(dose_dates[-1] + o)
 
-    return [*zip(dose_dates, n*[dose[1]], n*[dose[2]])]
+    return [*zip(dose_dates, n * [dose[1]], n * [dose[2]])]
 
 
 def rep_from_dose(date, dose, ef, n, freq):
@@ -189,17 +216,19 @@ def rep_from_dose(date, dose, ef, n, freq):
     if isinstance(freq, str) or not isinstance(freq, Iterable):
         freq = (freq,)
 
-    offsets = [pd.tseries.frequencies.to_offset(f)
-            for f in (math.floor(n / len(freq)) * freq)[0:n]]
+    offsets = [
+        pd.tseries.frequencies.to_offset(f)
+        for f in (math.floor(n / len(freq)) * freq)[0:n]
+    ]
     dose_dates = [pd.to_datetime(date)]
     for o in offsets:
         dose_dates.append(dose_dates[-1] + o)
 
     doses = [d for d in (math.floor(n / len(dose)) * dose)[0:n]]
-    return [*zip(dose_dates, doses, n*[ef])]
+    return [*zip(dose_dates, doses, n * [ef])]
 
 
-def zeroLevelsFromDoses(doses, sample_freq, upper_bound='midnight'):
+def zeroLevelsFromDoses(doses, sample_freq, upper_bound="midnight"):
     """
     Intelligently create a simulation window for the doses.
 
@@ -245,43 +274,46 @@ def zeroLevelsFromDoses(doses, sample_freq, upper_bound='midnight'):
         upper_bound = (upper_bound,)
 
     ub_method = upper_bound[0] if len(upper_bound) > 0 else None
-    ub_param  = upper_bound[1] if len(upper_bound) > 1 else None
+    ub_param = upper_bound[1] if len(upper_bound) > 1 else None
 
-    if ub_method == 'midnight':
+    if ub_method == "midnight":
         n = 1 if ub_param is None else ub_param
-        end_time = (doses.index[-1] + pd.to_timedelta(n, unit='D')).floor('D')
-    elif ub_method == 'continue':
+        end_time = (doses.index[-1] + pd.to_timedelta(n, unit="D")).floor("D")
+    elif ub_method == "continue":
         if len(doses) < 2:
-            raise ValueError("upper_bound method 'continue' requires at least "
-                             "two doses.")
+            raise ValueError(
+                "upper_bound method 'continue' requires at least two doses."
+            )
 
         n = 1 if ub_param is None else ub_param
         freq = doses.index[-1] - doses.index[-2]
-        end_time = doses.index[-1] + n*freq
-    elif ub_method == 'timedelta':
+        end_time = doses.index[-1] + n * freq
+    elif ub_method == "timedelta":
         if ub_param is None:
-            raise ValueError("upper_bound method 'timedelta' requires an "
-                             "argument.")
+            raise ValueError(
+                "upper_bound method 'timedelta' requires an argument."
+            )
 
-        t = pd.to_timedelta(ub_param, unit='D')
+        t = pd.to_timedelta(ub_param, unit="D")
         end_time = doses.index[-1] + t
-    elif ub_method == 'datetime':
+    elif ub_method == "datetime":
         if ub_param is None:
-            raise ValueError("upper_bound method 'datetime' requires an "
-                             "argument.")
+            raise ValueError(
+                "upper_bound method 'datetime' requires an argument."
+            )
 
         end_time = pd.to_datetime(ub_param)
     else:
         raise ValueError("upper_bound method '{ub_method}' isn't valid.")
 
-    start_time = doses.index[0].floor('D')
+    start_time = doses.index[0].floor("D")
 
     # If our end_time isn't properly aligned, increment it by one sample
     # period and let date_range truncate to the correctly aligned end.
     # This ensures date_range doesn't pick an end_date that doesn't
     # include our entire window.
     freq_offset = pd.tseries.frequencies.to_offset(sample_freq)
-    freq_sec = (freq_offset.nanos * 1e-9)
+    freq_sec = freq_offset.nanos * 1e-9
     if (end_time - start_time).total_seconds() % freq_sec != 0:
         end_time = freq_offset.apply(end_time)
 
@@ -292,7 +324,7 @@ def zeroLevelsFromDoses(doses, sample_freq, upper_bound='midnight'):
 def zeroLevelsAtMoments(moments):
     """
     Returns a Pandas Series of zeros indexed by the input.
-    
+
     This is used to create the output buffer for calcBloodLevels when
     you are interested in the calculated blood level at a particular
     moment in time, such as at the moment of a dose, or a moment of
@@ -301,9 +333,9 @@ def zeroLevelsAtMoments(moments):
     return pd.Series(np.zeros(len(moments)), index=moments)
 
 
-
 ###################################
 ### Pharmacokinetic Computation ###
+
 
 def calcBloodLevelsExact(zero_levels, doses, medications):
     """
@@ -340,13 +372,15 @@ def calcBloodLevelsExact(zero_levels, doses, medications):
                   medication column of doses (see
                   medications.medications)."""
 
-    for dose_date, dose_amt, dose_medication in doses[["dose", "medication"]].itertuples():
+    for dose_date, dose_amt, dose_medication in doses[
+        ["dose", "medication"]
+    ].itertuples():
         dose_ef = medications[dose_medication]
 
         # If the function has a specified domain, we only need to calculate
         # levels across that. If it doesn't, then we need to calculate levels
         # across the entire sample space.
-        if hasattr(dose_ef, 'domain') and dose_ef.domain is not None:
+        if hasattr(dose_ef, "domain") and dose_ef.domain is not None:
             np_date = dose_date.to_numpy()
             max_T = np_date + dose_ef.domain[1].to_numpy()
 
@@ -354,14 +388,17 @@ def calcBloodLevelsExact(zero_levels, doses, medications):
             # way is a lot faster than Panda's time-based slices.
             idxs = np.searchsorted(zero_levels.index.values, [np_date, max_T])
             level_idxs = np.arange(
-                    idxs[0],
-                    idxs[1] + (idxs[1] < len(zero_levels))) # Inclusive
+                idxs[0],
+                idxs[1] + (idxs[1] < len(zero_levels)),
+            )
 
-            zero_levels.values[level_idxs] += (dose_amt * dose_ef(timeDeltaToDays(
-                zero_levels.index.values[level_idxs] - np_date)))
+            zero_levels.values[level_idxs] += dose_amt * dose_ef(
+                timeDeltaToDays(zero_levels.index.values[level_idxs] - np_date)
+            )
         else:
-            zero_levels += (dose_amt * dose_ef(timeDeltaToDays(
-                zero_levels.index - dose_date)))
+            zero_levels += dose_amt * dose_ef(
+                timeDeltaToDays(zero_levels.index - dose_date)
+            )
 
     return zero_levels
 
@@ -416,14 +453,15 @@ def calcBloodLevelsConv(zero_levels, doses, medications):
 
     if zero_levels.index.freq is None:
         warnings.warn(
-                "It doesn't look like zero_levels has a fixed frequency. "
-                "calcBloodLevelsConv requires fixed frequency samples or "
-                "the results will be incorrect!",
-                RuntimeWarning)
+            "It doesn't look like zero_levels has a fixed frequency. "
+            "calcBloodLevelsConv requires fixed frequency samples or "
+            "the results will be incorrect!",
+            RuntimeWarning,
+        )
 
     def project_doses(real_doses, samples):
         # Find where each dose belongs in the sample space.
-        it0 = np.searchsorted(samples.index, real_doses.index, side='right')
+        it0 = np.searchsorted(samples.index, real_doses.index, side="right")
 
         # With side='right', zeros in it0 represent times that are
         # before the beginning of the sample window.
@@ -432,7 +470,8 @@ def calcBloodLevelsConv(zero_levels, doses, medications):
                 f"Doses before the lower bound of zero_levels "
                 f" at {zero_levels.index[0]} are unsupported with "
                 f" calcBloodLevelsConv -- use calcBloodLevelsExact if "
-                f"you need this functionality, or use a bigger window.")
+                f"you need this functionality, or use a bigger window."
+            )
 
         it0 -= 1
         t0 = samples.index[it0]
@@ -449,12 +488,13 @@ def calcBloodLevelsConv(zero_levels, doses, medications):
         # doses between the two adjacent samples.
         dt = (t1 - t0).to_numpy()
         p = np.divide(
-                (real_doses.index[in_window] - t0).to_numpy(),
-                dt,
-                out=np.zeros_like(dt, dtype=np.float64),
-                where=(dt != pd.to_timedelta(0))).astype(np.float64)
+            (real_doses.index[in_window] - t0).to_numpy(),
+            dt,
+            out=np.zeros_like(dt, dtype=np.float64),
+            where=(dt != pd.to_timedelta(0)),
+        ).astype(np.float64)
 
-        dose_amts = real_doses[["dose"]].values[:,0][in_window]
+        dose_amts = real_doses[["dose"]].values[:, 0][in_window]
         proj_doses = np.zeros(len(samples), dtype=np.float64)
         np.add.at(proj_doses, it0, dose_amts * (1 - p))
         np.add.at(proj_doses, it1, dose_amts * p)
@@ -462,7 +502,10 @@ def calcBloodLevelsConv(zero_levels, doses, medications):
         return proj_doses
 
     def resample_ef(medication_ef, samples):
-        if hasattr(medication_ef, 'domain') and medication_ef.domain is not None:
+        if (
+            hasattr(medication_ef, "domain")
+            and medication_ef.domain is not None
+        ):
             min_T = samples.index[0] + medication_ef.domain[0]
             max_T = samples.index[0] + medication_ef.domain[1]
             ef_range = samples[min_T:max_T].index
@@ -474,7 +517,8 @@ def calcBloodLevelsConv(zero_levels, doses, medications):
     # We run one convolution for each medication, and combine the results.
     grp_medications = doses.groupby(by="medication")
     for medication_idx, (medication, group) in zip(
-            range(len(grp_medications)), grp_medications):
+        range(len(grp_medications)), grp_medications
+    ):
         # First, project the doses into the sample space.
         proj_doses = project_doses(group, zero_levels)
 
@@ -485,18 +529,20 @@ def calcBloodLevelsConv(zero_levels, doses, medications):
 
         # Now do the convolution!
         zero_levels += pd.Series(
-                signal.convolve(
-                    proj_doses,
-                    dose_response,
-                    mode='full')[0:len(zero_levels)],
-                index=zero_levels.index)
+            signal.convolve(
+                proj_doses,
+                dose_response,
+                mode="full",
+            )[0 : len(zero_levels)],
+            index=zero_levels.index,
+        )
 
     return zero_levels
 
 
-
 ################
 ### Plotting ###
+
 
 def startPlot():
     fig, ax_pri = pyplot.subplots(figsize=[15, 12], dpi=150)
@@ -504,33 +550,48 @@ def startPlot():
     ax_pri.set_axisbelow(True)
     ax_pri.set_zorder(0)
 
-    ax_pri.set_xlabel('Date')
-    ax_pri.set_ylabel('Estradiol (pg/mL)')
+    ax_pri.set_xlabel("Date")
+    ax_pri.set_ylabel("Estradiol (pg/mL)")
     ax_pri.xaxis_date()
 
     ax_pri.xaxis.set_major_locator(mdates.MonthLocator())
     ax_pri.xaxis.set_major_formatter(mdates.DateFormatter("1%Y.%b.%d.%H%M"))
-    ax_pri.xaxis.set_minor_locator(mdates.DayLocator(bymonthday=range(1, 32, 3)))
+    ax_pri.xaxis.set_minor_locator(
+        mdates.DayLocator(bymonthday=range(1, 32, 3))
+    )
     ax_pri.xaxis.set_minor_formatter(mdates.DateFormatter("%d"))
-    ax_pri.tick_params(which='major', axis='x', labelrotation=-45, pad=12)
+    ax_pri.tick_params(which="major", axis="x", labelrotation=-45, pad=12)
     pyplot.setp(ax_pri.xaxis.get_majorticklabels(), ha="left")
-    ax_pri.tick_params(which='minor', axis='x', labelrotation=-90, labelsize=6)
+    ax_pri.tick_params(which="minor", axis="x", labelrotation=-90, labelsize=6)
 
-    ax_pri.grid(which='major', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.7)
-    ax_pri.grid(which='minor', axis='both', linestyle=':', color=(0.8, 0.8, 0.8), alpha=0.2)
+    ax_pri.grid(
+        which="major",
+        axis="both",
+        linestyle=":",
+        color=(0.8, 0.8, 0.8),
+        alpha=0.7,
+    )
+    ax_pri.grid(
+        which="minor",
+        axis="both",
+        linestyle=":",
+        color=(0.8, 0.8, 0.8),
+        alpha=0.2,
+    )
 
     return fig, ax_pri
 
 
 def plotDoses(
-        fig,
-        ax,
-        doses,
-        medications,
-        estradiol_measurements=pd.DataFrame(),
-        sample_freq='15min',
-        label='',
-        upper_bound=('continue', 1)):
+    fig,
+    ax,
+    doses,
+    medications,
+    estradiol_measurements=pd.DataFrame(),
+    sample_freq="15min",
+    label="",
+    upper_bound=("continue", 1),
+):
     """
     Plot the continuous, simulated curve of blood levels for a series of
     doses, along with associated blood level measurements if they exist.
@@ -554,115 +615,147 @@ def plotDoses(
                             pharma.zeroLevelsFromDoses(...))."""
 
     # Easy way to display a vertical line at the current time
-    estradiol_measurements = pd.concat([
-        estradiol_measurements,
-        createMeasurements(np.array([[pd.Timestamp.now(), -10.0, np.nan]]))])
+    estradiol_measurements = pd.concat(
+        [
+            estradiol_measurements,
+            createMeasurements(
+                np.array([[pd.Timestamp.now(), -10.0, np.nan]])
+            ),
+        ]
+    )
 
     # Calculate everything we'll need to plot
     e_levels = calcBloodLevelsConv(
         zeroLevelsFromDoses(doses, sample_freq, upper_bound=upper_bound),
         doses,
-        medications)
+        medications,
+    )
     levels_at_doses = calcBloodLevelsExact(
         zeroLevelsAtMoments(doses.index),
         doses,
-        medications)
+        medications,
+    )
     levels_at_measurements = calcBloodLevelsExact(
         zeroLevelsAtMoments(estradiol_measurements.index),
         doses,
-        medications)
+        medications,
+    )
 
     # The primary axis displays absolute date.
     ax_pri = ax
 
     # matplotlib uses *FLOAT DAYS SINCE EPOCH* to represent dates.
     # set_xlim can take a pd DateTime, but converts it to that ^
-    ax_pri.set_xlim((mdates.date2num(e_levels.index[0]),
-                     mdates.date2num(e_levels.index[-1])))
+    ax_pri.set_xlim(
+        (
+            mdates.date2num(e_levels.index[0]),
+            mdates.date2num(e_levels.index[-1]),
+        )
+    )
 
     # The secondary axis displays relative date in days.
     def mdate2reldays(X):
         return np.array([d - mdates.date2num(e_levels.index[0]) for d in X])
+
     def reldays2mdate(X):
         return np.array([mdates.date2num(e_levels.index[0]) + d for d in X])
 
-    ax_sec = ax_pri.secondary_xaxis('top', functions=(mdate2reldays, reldays2mdate))
+    ax_sec = ax_pri.secondary_xaxis(
+        "top",
+        functions=(mdate2reldays, reldays2mdate),
+    )
     ax_sec.set_xlabel("Time (days)")
-    ax_sec.set_xticks(np.arange(0.0,
-                                timeDeltaToDays(e_levels.index[-1] - e_levels.index[0]) + 1.0,
-                                9.0))
+    ax_sec.set_xticks(
+        np.arange(
+            0.0,
+            timeDeltaToDays(e_levels.index[-1] - e_levels.index[0]) + 1.0,
+            9.0,
+        )
+    )
     ax_sec.xaxis.set_minor_locator(mticker.AutoMinorLocator(n=3))
-    ax_sec.tick_params(axis='x', labelrotation=45)
+    ax_sec.tick_params(axis="x", labelrotation=45)
 
     # Plot simulated curve
-    ax_pri.plot(e_levels.index,
-                e_levels.values,
-                label=label,
-                zorder=1)
+    ax_pri.plot(e_levels.index, e_levels.values, label=label, zorder=1)
 
     # Plot moments of dose administration as dose-scaled points on top
     # of the simulated curve, independently for each kind of medication.
     for medication, group in doses.groupby(by="medication"):
-        dose_amts       = group["dose"].values
-        norm_dose_amts  = Normalize(
-                vmin=-1.0*max(dose_amts),
-                vmax=max(dose_amts)+0.2)(dose_amts)
-        marker_sizes    = [(9.0 * dose_amt + 2.0) ** 2
-                for dose_amt in norm_dose_amts]
-        marker_colors   = [(dose_amt, 1.0 - dose_amt, 0.7, 1.0)
-                for dose_amt in norm_dose_amts]
+        dose_amts = group["dose"].values
+        norm_dose_amts = Normalize(
+            vmin=-1.0 * max(dose_amts),
+            vmax=max(dose_amts) + 0.2,
+        )(dose_amts)
+        marker_sizes = [
+            (9.0 * dose_amt + 2.0) ** 2 for dose_amt in norm_dose_amts
+        ]
+        marker_colors = [
+            (dose_amt, 1.0 - dose_amt, 0.7, 1.0) for dose_amt in norm_dose_amts
+        ]
         levels_at_group = levels_at_doses[group.index]
-        ax_pri.scatter(levels_at_group.index,
-                       levels_at_group.values,
-                       s=marker_sizes,
-                       c=marker_colors,
-                       marker=medication_markers[medication],
-                       zorder=2,
-                       label=f"{medication} med")
+        ax_pri.scatter(
+            levels_at_group.index,
+            levels_at_group.values,
+            s=marker_sizes,
+            c=marker_colors,
+            marker=medication_markers[medication],
+            zorder=2,
+            label=f"{medication} med",
+        )
     ax_pri.legend()
 
     # Plot measured blood levels
-    ax_pri.plot(estradiol_measurements.index,
-                estradiol_measurements["value"].values,
-                'o')
+    ax_pri.plot(
+        estradiol_measurements.index,
+        estradiol_measurements["value"].values,
+        "o",
+    )
 
     # Draw vertical lines from the measured points to the simulated curve
     measurements_points = [
-        (mdates.date2num(d), m) for d,m in estradiol_measurements["value"].items()]
+        (mdates.date2num(d), m)
+        for d, m in estradiol_measurements["value"].items()
+    ]
     levels_at_measurements_points = [
-        (mdates.date2num(d), m) for d,m in levels_at_measurements.items()]
+        (mdates.date2num(d), m) for d, m in levels_at_measurements.items()
+    ]
 
     lines = list(zip(measurements_points, levels_at_measurements_points))
     lc = mc.LineCollection(
-            lines,
-            linestyles=(0, (2, 3)),
-            colors=(0.7, 0.3, 0.3, 1.0),
-            zorder=3)
-    ax_pri.add_collection(lc);
+        lines,
+        linestyles=(0, (2, 3)),
+        colors=(0.7, 0.3, 0.3, 1.0),
+        zorder=3,
+    )
+    ax_pri.add_collection(lc)
 
     for line in lines:
         # if length of line in figure coords is > length of text in figure
         # coords, then draw the text at the midpoint of the line. We assume
         # this is true to begin with, but then alter the text if it turns out
         # to not be true.
-        mp = (0.5*(line[0][0] + line[1][0]), 0.5*(line[0][1] + line[1][1]))
+        mp = (0.5 * (line[0][0] + line[1][0]), 0.5 * (line[0][1] + line[1][1]))
         txt = ax_pri.text(
-            mp[0], mp[1],
+            mp[0],
+            mp[1],
             mdates.DateFormatter("1%Y.%b.%d.%H%M").format_data(line[0][0]),
             rotation=-90,
-            ha="left", va="center",
+            ha="left",
+            va="center",
             fontsize="x-small",
             color=(0.7, 0.3, 0.3, 1.0),
             zorder=3,
-            clip_on=True)
+            clip_on=True,
+        )
 
         # elif length of line in display coords is <= length of text in display
         # coords, then draw the text above or below the line segment, with
         # ha="center".
         txt_bbox = txt.get_window_extent(renderer=fig.canvas.get_renderer())
         line_dc = ax_pri.transData.transform(line)
-        if abs(line_dc[0][1] - line_dc[1][1]) <=\
-           abs(txt_bbox.p0[1] - txt_bbox.p1[1]):
+        if abs(line_dc[0][1] - line_dc[1][1]) <= abs(
+            txt_bbox.p0[1] - txt_bbox.p1[1]
+        ):
             txt.set_y(line[0][1])
             if line[0][1] >= line[1][1]:
                 txt.set_va("bottom")
@@ -687,13 +780,13 @@ def plotDosesFrequencies(fig, ax, ef, sim_time, sim_freq, dose_freqs):
     medications = {"ef": ef}
     for freq in dose_freqs:
         plotDoses(
-            fig, ax,
+            fig,
+            ax,
             createDosesCycle("ef", sim_time, freq),
             medications,
             sample_freq=sim_freq,
-            label=f"{freq} freq")
+            label=f"{freq} freq",
+        )
 
-    ax.set_xlim(
-        ax.get_xlim()[0],
-        pd.to_datetime(sim_time, unit='D'))
+    ax.set_xlim(ax.get_xlim()[0], pd.to_datetime(sim_time, unit="D"))
     ax.legend()
