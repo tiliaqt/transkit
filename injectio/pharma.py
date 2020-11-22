@@ -8,11 +8,11 @@ from matplotlib import ticker as mticker
 from matplotlib.colors import Normalize
 import numpy as np
 import pandas as pd
-from scipy import interpolate, signal
+from scipy import signal
 import warnings
 
 
-injectables_markers = defaultdict(lambda: "2", {
+medication_markers = defaultdict(lambda: "2", {
     "ec": "2",
     "ev": "1",
     "pill-oral": ".",
@@ -43,35 +43,36 @@ def timeDeltaToDays(td):
 
 
 ###################################
-### Injection Creation Routines ###
+### Doses Creation Routines ###
 
-def createInjections(inj_array, date_format=None, date_unit='ns'):
+def createDoses(dose_array, date_format=None, date_unit='ns'):
     """
-    Create a DataFrame of injections for use in computation.
+    Create a DataFrame of medication doses for use in computation.
 
     This reformats a numpy ndarray[object] of the form:
 
     [
-        [ "date str", dose float, "injectable str" ],
-        [ "date str", dose float, "injectable str" ],
+        [ "date str", dose float, "medication str" ],
+        [ "date str", dose float, "medication str" ],
         ...
     ]
 
-    into a Pandas DataFrame with the date as index, and dose and injectable as
-    columns. This allows the user-typed input array to look nice and be easy
-    to work with. Date values can be anything parsable by pd.to_datetime(...).
+    into a Pandas DataFrame with the date as index, and dose and
+    medication as columns. This allows the user-typed input array to
+    look nice and be easy to work with. Date values can be anything
+    parsable by pd.to_datetime(...).
 
     Parameters:
     ===========
-    inj_array    ndarray of injections.
+    dose_array   np.ndarray of doses..
     date_format  Passed through to the format parameter of
                  pandas.to_datetime(...).
     date_unit    Passed through to the unit parameter of
                  pandas.to_datetime(...)."""
 
-    df = pd.DataFrame(inj_array[:,1:3],
-                      index=pd.to_datetime(inj_array[:,0], format=date_format, unit=date_unit),
-                      columns=["dose", "injectable"])
+    df = pd.DataFrame(dose_array[:,1:3],
+                      index=pd.to_datetime(dose_array[:,0], format=date_format, unit=date_unit),
+                      columns=["dose", "medication"])
     df.loc[:, "dose"] = df["dose"].apply(pd.to_numeric)
     return df
 
@@ -88,14 +89,14 @@ def createMeasurements(measurements_array, date_format=None, date_unit='ns'):
         ...
     ]
 
-    into a Pandas DataFrame with the date as index, and measurement value and
-    method as columns. This allows the user-typed input array to look nice and
-    be easy to work with. Date values can be anything parsable by
-    pd.to_datetime(...).
+    into a Pandas DataFrame with the date as index, and measurement
+    value and method as columns. This allows the user-typed input array
+    to look nice and be easy to work with. Date values can be anything
+    parsable by pd.to_datetime(...).
 
     Parameters:
     ===========
-    measurements_array  ndarray of measurements.
+    measurements_array  np.ndarray of measurements.
     date_format         Passed through to the format parameter of
                         pandas.to_datetime(...).
     date_unit           Passed through to the unit parameter of
@@ -108,75 +109,79 @@ def createMeasurements(measurements_array, date_format=None, date_unit='ns'):
     return df
 
 
-def createInjectionsCycle(ef, sim_time, inj_freq, start_date=0):
+def createDosesCycle(ef, sim_time, dose_freq, start_date=0):
     """
-    Creates a DataFrame of injections for a particular injectable that cycles
+    Creates a DataFrame of doses for a particular medication that cycles
     monotonically for the desired length of time.
 
     Parameters:
     ===========
-    ef          Injectable
+    ef          Medication string.
     sim_time    Length of simulation [Days]
-    inj_freq    Injection every inj_freq [Pandas frequency thing]
+    dose_freq   Dose every dose_freq [Pandas frequency thing]
     start_date  Cycle starting from this date. Can be anything parsable
                 by pd.to_datetime(...)."""
 
-    n_inj = math.ceil(sim_time / (pd.tseries.frequencies.to_offset(inj_freq).nanos * 1.0e-9/60.0/60.0/24.0))
-    injs = createInjections(np.array(rep_from([start_date, 1.0, ef], n=n_inj, freq=inj_freq)))
-    return injs
+    n_doses = math.ceil(
+            sim_time / (pd.tseries.frequencies.to_offset(dose_freq).nanos
+                        * 1.0e-9 / 60.0 / 60.0 / 24.0))
+    doses = createDoses(np.array(
+        rep_from([start_date, 1.0, ef], n=n_doses, freq=dose_freq)))
+    return doses
 
 
-def rep_from(inj, n, freq):
+def rep_from(dose, n, freq):
     """
-    Repeats injections with cycling frequencies from a given first injection.
+    Repeats doses with cycling frequencies from a given first dose.
     Returns a list of lists.
 
-    This is used for composing and generating injections for use in the
-    ndarray passed to createInjections().
+    This is used for composing and generating doses for use in the
+    ndarray passed to createDoses().
 
     Parameters:
     ===========
-    inj   Starting injection specified as a length-3 sequence of
-          ("date", dose, "injectable").
+    dose  Starting dose specified as a length-3 sequence of
+          ("date", dose, "medication").
     n     Number of repetitions.
     freq  Frequency of repetition. Either a single Pandas frequency string, or
           an Iterable of frequency strings that will be cycled through as the
           repetition continues. The latter format allows for a cycle of
-          injections where, eg. you inject after 2 days, then after 3 days,
+          doses where, eg. you inject after 2 days, then after 3 days,
           then after 2 days, then after 3 days, etc."""
 
     if isinstance(freq, str) or not isinstance(freq, Iterable):
         freq = (freq,)
 
-    offsets = [pd.tseries.frequencies.to_offset(f) for f in (math.floor(n / len(freq)) * freq)[0:n]]
-    inj_dates = [pd.to_datetime(inj[0])]
+    offsets = [pd.tseries.frequencies.to_offset(f)
+            for f in (math.floor(n / len(freq)) * freq)[0:n]]
+    dose_dates = [pd.to_datetime(dose[0])]
     for o in offsets:
-        inj_dates.append(inj_dates[-1] + o)
+        dose_dates.append(dose_dates[-1] + o)
 
-    return [*zip(inj_dates, n*[inj[1]], n*[inj[2]])]
+    return [*zip(dose_dates, n*[dose[1]], n*[dose[2]])]
 
 
 def rep_from_dose(date, dose, ef, n, freq):
     """
-    Repeats injections with cycling doses and cycling frequencies from a
-    given first injection. Returns a list of lists.
+    Repeats doses with cycling dose amounts and cycling frequencies from
+    a given first dose. Returns a list of lists.
 
-    This is used for composing and generating injections for use in the
-    ndarray passed to createInjections().
+    This is used for composing and generating doses for use in the
+    ndarray passed to createDoses().
 
     Parameters:
     ===========
-    date  Starting injection date, as string parsable by pandas.to_datetime().
-    dose  Injection dose. Either a single scalar that will be repeated in each
-          injection, or an Iterable of scalar doses that will be cycled through
+    date  Starting dose date, as string parsable by pandas.to_datetime().
+    dose  Dose amount. Either a single scalar that will be repeated in each
+          dose, or an Iterable of scalar doses that will be cycled through
           as the repetition continues.
-    ef    Injectable string corresponding to an injectable dose-reponse
+    ef    Medication string corresponding to a medication dose-reponse
           function.
     n     Number of repetitions.
     freq  Frequency of repetition. Either a single Pandas frequency string, or
           a sequence of frequency strings that will be cycled through as the
           repetition continues. The latter format allows for a cycle of
-          injections where, eg. you inject after 2 days, then after 3 days,
+          doses where, eg. you dose after 2 days, then after 3 days,
           then after 2 days, then after 3 days, etc."""
 
     if not isinstance(dose, Iterable):
@@ -184,50 +189,55 @@ def rep_from_dose(date, dose, ef, n, freq):
     if isinstance(freq, str) or not isinstance(freq, Iterable):
         freq = (freq,)
 
-    offsets = [pd.tseries.frequencies.to_offset(f) for f in (math.floor(n / len(freq)) * freq)[0:n]]
-    inj_dates = [pd.to_datetime(date)]
+    offsets = [pd.tseries.frequencies.to_offset(f)
+            for f in (math.floor(n / len(freq)) * freq)[0:n]]
+    dose_dates = [pd.to_datetime(date)]
     for o in offsets:
-        inj_dates.append(inj_dates[-1] + o)
+        dose_dates.append(dose_dates[-1] + o)
 
     doses = [d for d in (math.floor(n / len(dose)) * dose)[0:n]]
-    return [*zip(inj_dates, doses, n*[ef])]
+    return [*zip(dose_dates, doses, n*[ef])]
 
 
-def zeroLevelsFromInjections(injections, sample_freq, upper_bound='midnight'):
+def zeroLevelsFromDoses(doses, sample_freq, upper_bound='midnight'):
     """
-    Intelligently create a simulation window for the injections.
+    Intelligently create a simulation window for the doses.
 
     Returns a Pandas series of zeros indexed by time across the entire range of
-    injections, sampled at a given frequency. The range of the returned series
-    is big enough to include all the input injections. The lower bound of the
-    window is midnight (00h:00m) of the day of the first injection, and the
+    doses, sampled at a given frequency. The range of the returned series
+    is big enough to include all the input doses. The lower bound of the
+    window is midnight (00h:00m) of the day of the first dose, and the
     upper bound is controlled by the upper_bound parameter.
 
     Parameters:
     ===========
-    injections   DataFrame of injections (see createInjections(...)).
+    doses   DataFrame of doses (see createDoses(...)).
     sample_freq  Sample frequency [Pandas frequency string].
-    upper_bound  1- or 2-tuple specifying how to handle the upper bound of the
-                 window. The first value of the tuple is a string chooding the
-                 the method of handling, and if present the second value is the
-                 paramter to that method. Possible methods are:
-                     ('midnight', n=1): Upper bound will be the first sample
-                                        greater than midnight (00h:00m) of the
-                                        nth day following the last injection.
-                     ('continue', n=1): Upper bound will be the first sample
-                                        greater than the period as if the last
-                                        injection was repeated n times, using
-                                        the time between the last two
-                                        injections as the period. Requires
-                                        at least two injections.
-                    ('timedelta', t):   Upper bound will be the first sample
-                                        greater than timedelta t after the
-                                        last injection. t is required and may
-                                        be either a pandas.TimeDelta or a
-                                        number of days.
-                    ('datetime', t):    Upper bound will be the first sample
-                                        greater than the time t. t is required
-                                        and can be any date parsable by
+    upper_bound  1- or 2-tuple specifying how to handle the upper bound
+                 of the window. The first value of the tuple is a string
+                 chooding the the method of handling, and if present the
+                 second value is the paramter to that method. Possible
+                 methods are:
+                     ('midnight', n=1): Upper bound will be the first
+                                        sample greater than midnight
+                                        (00h:00m) of the nth day
+                                        following the last dose.
+                     ('continue', n=1): Upper bound will be the first
+                                        sample greater than the period
+                                        as if the last dose was repeated
+                                        n times, using the time between
+                                        the last two dses as the period.
+                                        Requires at least two doses.
+                    ('timedelta', t):   Upper bound will be the first
+                                        sample greater than timedelta t
+                                        after the last dose. t is
+                                        required and may be either a
+                                        pandas.TimeDelta or a number of
+                                        days.
+                    ('datetime', t):    Upper bound will be the first
+                                        sample greater than the time t.
+                                        t is required and can be any
+                                        date parsable by
                                         pandas.to_datetime.
                  ('midnight') is the default method."""
 
@@ -239,22 +249,22 @@ def zeroLevelsFromInjections(injections, sample_freq, upper_bound='midnight'):
 
     if ub_method == 'midnight':
         n = 1 if ub_param is None else ub_param
-        end_time = (injections.index[-1] + pd.to_timedelta(n, unit='D')).floor('D')
+        end_time = (doses.index[-1] + pd.to_timedelta(n, unit='D')).floor('D')
     elif ub_method == 'continue':
-        if len(injections) < 2:
+        if len(doses) < 2:
             raise ValueError("upper_bound method 'continue' requires at least "
-                             "two injections.")
+                             "two doses.")
 
         n = 1 if ub_param is None else ub_param
-        freq = injections.index[-1] - injections.index[-2]
-        end_time = injections.index[-1] + n*freq
+        freq = doses.index[-1] - doses.index[-2]
+        end_time = doses.index[-1] + n*freq
     elif ub_method == 'timedelta':
         if ub_param is None:
             raise ValueError("upper_bound method 'timedelta' requires an "
                              "argument.")
 
         t = pd.to_timedelta(ub_param, unit='D')
-        end_time = injections.index[-1] + t
+        end_time = doses.index[-1] + t
     elif ub_method == 'datetime':
         if ub_param is None:
             raise ValueError("upper_bound method 'datetime' requires an "
@@ -264,7 +274,7 @@ def zeroLevelsFromInjections(injections, sample_freq, upper_bound='midnight'):
     else:
         raise ValueError("upper_bound method '{ub_method}' isn't valid.")
 
-    start_time = injections.index[0].floor('D')
+    start_time = doses.index[0].floor('D')
 
     # If our end_time isn't properly aligned, increment it by one sample
     # period and let date_range truncate to the correctly aligned end.
@@ -283,10 +293,10 @@ def zeroLevelsAtMoments(moments):
     """
     Returns a Pandas Series of zeros indexed by the input.
     
-    This is used to create the output buffer for calcInjections when you are
-    interested in the calculated blood level at a particular moment in time,
-    such as at the moment of injection, or a moment of measurement. It works
-    with any DatetimeIndex as input."""
+    This is used to create the output buffer for calcBloodLevels when
+    you are interested in the calculated blood level at a particular
+    moment in time, such as at the moment of a dose, or a moment of
+    measurement. It works with any DatetimeIndex as input."""
 
     return pd.Series(np.zeros(len(moments)), index=moments)
 
@@ -295,15 +305,15 @@ def zeroLevelsAtMoments(moments):
 ###################################
 ### Pharmacokinetic Computation ###
 
-def calcInjectionsExact(zero_levels, injections, injectables):
+def calcBloodLevelsExact(zero_levels, doses, medications):
     """
-    Compute blood levels for the given injections using a
+    Compute blood levels for the given doses using a
     noncompartmental pharmacokinetic model.
 
-    Given a DataFrame of injections (injection time, injection dose, and
-    medication), this computes the simulated total blood concentration
-    at every point in time in the index of zero_levels using the
-    medication dose-reponse functions given in injectables.
+    Given a DataFrame of doses (dose time, dose amount, and medication),
+    this computes the simulated total blood concentration at every point
+    in time in the index of zero_levels using the medication
+    dose-reponse functions given in medications.
 
     This additively superimposes the dose-response functions shifted in
     time for each dose. Each dose-response function returns the total
@@ -323,22 +333,22 @@ def calcInjectionsExact(zero_levels, injections, injectables):
     zero_levels   Series of zeros indexed by Datetime of times at which
                   the total blood concentration curve curve should be
                   sampled at.
-    injections    DataFrame of injections that specify the blood
-                  concentration curve (see createInjections(...)).
-    injectables   Dict of injectable dose-reponse functions where keys
+    doses         DataFrame of doses that specify the blood
+                  concentration curve (see createDoses(...)).
+    medications   Dict of medication dose-reponse functions where keys
                   are strings corresponding with the values of the
-                  injectable column of injections (see
-                  injectables.injectables)."""
+                  medication column of doses (see
+                  medications.medications)."""
 
-    for inj_date, inj_dose, inj_injectable in injections[["dose", "injectable"]].itertuples():
-        inj_ef = injectables[inj_injectable]
+    for dose_date, dose_amt, dose_medication in doses[["dose", "medication"]].itertuples():
+        dose_ef = medications[dose_medication]
 
         # If the function has a specified domain, we only need to calculate
         # levels across that. If it doesn't, then we need to calculate levels
         # across the entire sample space.
-        if hasattr(inj_ef, 'domain') and inj_ef.domain is not None:
-            np_date = inj_date.to_numpy()
-            max_T = np_date + inj_ef.domain[1].to_numpy()
+        if hasattr(dose_ef, 'domain') and dose_ef.domain is not None:
+            np_date = dose_date.to_numpy()
+            max_T = np_date + dose_ef.domain[1].to_numpy()
 
             # Find where in the sample space we need to modify. Doing it this
             # way is a lot faster than Panda's time-based slices.
@@ -347,44 +357,44 @@ def calcInjectionsExact(zero_levels, injections, injectables):
                     idxs[0],
                     idxs[1] + (idxs[1] < len(zero_levels))) # Inclusive
 
-            zero_levels.values[level_idxs] += (inj_dose * inj_ef(timeDeltaToDays(
+            zero_levels.values[level_idxs] += (dose_amt * dose_ef(timeDeltaToDays(
                 zero_levels.index.values[level_idxs] - np_date)))
         else:
-            zero_levels += (inj_dose * inj_ef(timeDeltaToDays(
-                zero_levels.index - inj_date)))
+            zero_levels += (dose_amt * dose_ef(timeDeltaToDays(
+                zero_levels.index - dose_date)))
 
     return zero_levels
 
 
-def calcInjectionsConv(zero_levels, injections, injectables):
+def calcBloodLevelsConv(zero_levels, doses, medications):
     """
-    Compute blood levels for the given injections using a
+    Compute blood levels for the given doses using a
     noncompartmental pharmacokinetic model.
 
-    Given a DataFrame of injections (injection time, injection dose, and
-    medication), this computes the simulated total blood concentration
-    at every point in time in the index of zero_levels using the
-    medication dose-reponse functions given in injectables.
+    Given a DataFrame of doses (dose time, dose amount, and medication),
+    this computes the simulated total blood concentration at every point
+    in time in the index of zero_levels using the medication
+    dose-reponse functions given in medications.
 
     This mutates the zero_levels input series and also returns it.
 
     The noncompartmental pharmacokinetic model is a Linear
     Shift-Invariant system, which allows us to perform the computation
     using the discrete convolution, which can be computed in O(NlogN) in
-    the number of samples. This makes it faster than calcInjectionsExact
-    for large numbers of samples.
+    the number of samples. This makes it faster than
+    calcBloodLevelsExact for large numbers of samples.
 
     The trade off of this approach is that it introduces numeric errors
-    into the results, dependent on the sample rate. Injection times must
-    be projected into the sample space, and they will not typically be
+    into the results, dependent on the sample rate. Dose times must be
+    projected into the sample space, and they will not typically be
     aligned with any samples. This creates temporal aliasing where the
     dose-response impulses will be shifted in time to the nearest
     sample. Similarly, the dose-response functions need to be resampled,
     which can introduce further amplitude aliasing, especially where
     there are sharp peaks (looking at you, Estradiol Valerate).
 
-    The error can be nearly zero if injections are aligned with samples.
-    This happens when, e.g., injection times are specified with 1 minute
+    The error can be nearly zero if doses are aligned with samples. This
+    happens when, e.g., dose times are specified with 1 minute
     precision, there is 1 minute between each sample, and samples are
     aligned with the start of each minute. In pathological cases, the
     error stays well below 1 pg/mL up to around 50 minutes between each
@@ -397,38 +407,38 @@ def calcInjectionsConv(zero_levels, injections, injectables):
                   the total blood concentration curve curve should be
                   sampled at. The index must be fixed-frequency and
                   monotonically increasing.
-    injections    DataFrame of injections that specify the blood
-                  concentration curve (see createInjections(...)).
-    injectables   Dict of injectable dose-reponse functions where keys
+    doses         DataFrame of doses that specify the blood
+                  concentration curve (see createDoses(...)).
+    medications   Dict of medication dose-reponse functions where keys
                   are strings corresponding with the values of the
-                  injectable column of injections (see
-                  injectables.injectables)."""
+                  medication column of doses (see
+                  medications.medications)."""
 
     if zero_levels.index.freq is None:
         warnings.warn(
                 "It doesn't look like zero_levels has a fixed frequency. "
-                "calcInjectionsConv requires fixed frequency samples or "
+                "calcBloodLevelsConv requires fixed frequency samples or "
                 "the results will be incorrect!",
                 RuntimeWarning)
 
-    def project_injs(injs, samples):
-        # Find where each injection belongs in the sample space.
-        it0 = np.searchsorted(samples.index, injs.index, side='right')
+    def project_doses(real_doses, samples):
+        # Find where each dose belongs in the sample space.
+        it0 = np.searchsorted(samples.index, real_doses.index, side='right')
 
         # With side='right', zeros in it0 represent times that are
         # before the beginning of the sample window.
         if not np.all(it0):
             raise ValueError(
-                f"Injections before the lower bound of zero_levels "
+                f"Doses before the lower bound of zero_levels "
                 f" at {zero_levels.index[0]} are unsupported with "
-                f" calcInjectionsConv -- use calcInjectionsExact if "
+                f" calcBloodLevelsConv -- use calcBloodLevelsExact if "
                 f"you need this functionality, or use a bigger window.")
 
         it0 -= 1
         t0 = samples.index[it0]
-        it1 = it0 + (t0 < injs.index)
+        it1 = it0 + (t0 < real_doses.index)
 
-        # Drop any injections that are after the sample window.
+        # Drop any doses that are after the sample window.
         in_window = it1 < len(samples)
         it0 = it0[in_window]
         it1 = it1[in_window]
@@ -436,93 +446,52 @@ def calcInjectionsConv(zero_levels, injections, injectables):
         t1 = samples.index[it1]
 
         # Improve temporal aliasing by proportionally splitting the
-        # injection dose between the two adjacent samples.
+        # doses between the two adjacent samples.
         dt = (t1 - t0).to_numpy()
-        p = np.divide((injs.index[in_window] - t0).to_numpy(), dt,
-                      out=np.zeros_like(dt, dtype=np.float64),
-                      where=(dt != pd.to_timedelta(0))).astype(np.float64)
+        p = np.divide(
+                (real_doses.index[in_window] - t0).to_numpy(),
+                dt,
+                out=np.zeros_like(dt, dtype=np.float64),
+                where=(dt != pd.to_timedelta(0))).astype(np.float64)
 
-        inj_doses = injs[["dose"]].values[:,0][in_window]
-        doses = np.zeros(len(samples), dtype=np.float64)
-        np.add.at(doses, it0, inj_doses * (1 - p))
-        np.add.at(doses, it1, inj_doses * p)
+        dose_amts = real_doses[["dose"]].values[:,0][in_window]
+        proj_doses = np.zeros(len(samples), dtype=np.float64)
+        np.add.at(proj_doses, it0, dose_amts * (1 - p))
+        np.add.at(proj_doses, it1, dose_amts * p)
 
-        return doses
+        return proj_doses
 
-    def resample_ef(inj_ef, samples):
-        if hasattr(inj_ef, 'domain') and inj_ef.domain is not None:
-            min_T = samples.index[0] + inj_ef.domain[0]
-            max_T = samples.index[0] + inj_ef.domain[1]
+    def resample_ef(medication_ef, samples):
+        if hasattr(medication_ef, 'domain') and medication_ef.domain is not None:
+            min_T = samples.index[0] + medication_ef.domain[0]
+            max_T = samples.index[0] + medication_ef.domain[1]
             ef_range = samples[min_T:max_T].index
         else:
             ef_range = samples.index
 
-        return inj_ef(timeDeltaToDays(ef_range - ef_range[0]))
+        return medication_ef(timeDeltaToDays(ef_range - ef_range[0]))
 
-    # We run one convolution for each injectable, and combine the results.
-    grp_injectables = injections.groupby(by="injectable")
-    for injectable_idx, (injectable, group) in zip(
-            range(len(grp_injectables)), grp_injectables):
-        # First, project the injections into the sample space.
-        doses = project_injs(group, zero_levels)
+    # We run one convolution for each medication, and combine the results.
+    grp_medications = doses.groupby(by="medication")
+    for medication_idx, (medication, group) in zip(
+            range(len(grp_medications)), grp_medications):
+        # First, project the doses into the sample space.
+        proj_doses = project_doses(group, zero_levels)
 
         # Next, resample the dose response function into our sample space
         # to create the kernel for the convolution.
-        inj_ef = injectables[injectable]
-        dose_response = resample_ef(inj_ef, zero_levels)
+        medication_ef = medications[medication]
+        dose_response = resample_ef(medication_ef, zero_levels)
 
         # Now do the convolution!
         zero_levels += pd.Series(
                 signal.convolve(
-                    doses,
+                    proj_doses,
                     dose_response,
                     mode='full')[0:len(zero_levels)],
                 index=zero_levels.index)
 
     return zero_levels
-
-
-def rawDVToFunc(raw):
-    """
-    Converts an ndarray of flaot(Day),float(pg/mL) pairs into an interpolated
-    function ef:
-
-        ef(time_since_injection [Days]) = blood concentration [pg/mL]
-
-    representing the instantaneous total blood concentration of the medication
-    at the given time after administration.
-
-    Expects two zero values at both the start and end, used to tweak the slope
-    of the interpolated curve to end at 0.0. Ef must be positive and continuous
-    across the domain of the input data, and equal to 0.0 outside that domain.
-    This is required for later computations using this function to operate
-    correctly.
-
-    The returned function ef is called in the inner loop of all subsequent
-    computations, so it is heavily optimized for performance by constructing
-    lookup tables of the interpolated function. LUT table sizes < 100000 seem
-    to make first derivatives of ef get wiggly."""
-
-    interp_ef = interpolate.interp1d(raw[:,0], raw[:,1],
-                                     kind='cubic',
-                                     fill_value=(0.0, 0.0),
-                                     bounds_error=False)
-    min_x = raw[1,0]
-    max_x = raw[-2,0]
-    sample_x  = np.linspace(min_x, max_x, num=100000)
-    sample_y  = np.array([interp_ef(x) for x in sample_x])
-    slope_lut = (sample_y[1:] - sample_y[:-1]) / (sample_x[1:] - sample_x[:-1])
-
-    def ef(x):
-        idx = np.searchsorted(sample_x, x)-1
-        return np.where(
-                np.logical_or(x <= min_x, x >= max_x),
-                np.zeros_like(x),
-                sample_y[idx] + ((x - sample_x[idx])
-                                 * np.take(slope_lut, idx, mode='clip')))
-    ef.domain = (pd.to_timedelta(min_x, unit='D'), pd.to_timedelta(max_x, unit='D'))
-
-    return ef
 
 
 
@@ -553,23 +522,25 @@ def startPlot():
     return fig, ax_pri
 
 
-def plotInjections(fig, ax,
-                   injections,
-                   injectables,
-                   estradiol_measurements=pd.DataFrame(),
-                   sample_freq='15min',
-                   label='',
-                   upper_bound=('continue', 1)):
+def plotDoses(
+        fig,
+        ax,
+        doses,
+        medications,
+        estradiol_measurements=pd.DataFrame(),
+        sample_freq='15min',
+        label='',
+        upper_bound=('continue', 1)):
     """
     Plot the continuous, simulated curve of blood levels for a series of
-    injections, along with associated blood level measurements if they exist.
+    doses, along with associated blood level measurements if they exist.
 
     Parameters:
     ===========
-    injections              Injections to plot, represented as a Pandas
-                            DataFrame with "dose" and "injectable" columns
-                            indexed by DateTime. See createInjections(...).
-    injectables             Mapping of injectable name to ef function. [dict]
+    doses                   Doses to plot, represented as a Pandas
+                            DataFrame with "dose" and "medication" columns
+                            indexed by DateTime. See createDoses(...).
+    medications             Mapping of medication name to ef function. [dict]
     estradiol_measurements  (Optional) Actual blood level measurements to plot
                             alongside the simulated curve, represented as a
                             Pandas DataFrame with "value" and "method" columns
@@ -580,7 +551,7 @@ def plotInjections(fig, ax,
     label                   (Optional) Matplotlib label to attach to the curve.
                             [String]
     upper_bound             Upper bound of the simulation window (see
-                            pharma.zeroLevelsFromInjections(...))."""
+                            pharma.zeroLevelsFromDoses(...))."""
 
     # Easy way to display a vertical line at the current time
     estradiol_measurements = pd.concat([
@@ -588,18 +559,18 @@ def plotInjections(fig, ax,
         createMeasurements(np.array([[pd.Timestamp.now(), -10.0, np.nan]]))])
 
     # Calculate everything we'll need to plot
-    e_levels = calcInjectionsConv(
-        zeroLevelsFromInjections(injections, sample_freq, upper_bound=upper_bound),
-        injections,
-        injectables)
-    levels_at_injections = calcInjectionsExact(
-        zeroLevelsAtMoments(injections.index),
-        injections,
-        injectables)
-    levels_at_measurements = calcInjectionsExact(
+    e_levels = calcBloodLevelsConv(
+        zeroLevelsFromDoses(doses, sample_freq, upper_bound=upper_bound),
+        doses,
+        medications)
+    levels_at_doses = calcBloodLevelsExact(
+        zeroLevelsAtMoments(doses.index),
+        doses,
+        medications)
+    levels_at_measurements = calcBloodLevelsExact(
         zeroLevelsAtMoments(estradiol_measurements.index),
-        injections,
-        injectables)
+        doses,
+        medications)
 
     # The primary axis displays absolute date.
     ax_pri = ax
@@ -629,21 +600,25 @@ def plotInjections(fig, ax,
                 label=label,
                 zorder=1)
 
-    # Plot moments of injection as dose-scaled points on top of the simulated
-    # curve, independently for each kind of injectable.
-    for injectable, group in injections.groupby(by="injectable"):
-        doses         = group["dose"].values
-        norm_doses    = Normalize(vmin=-1.0*max(doses), vmax=max(doses)+0.2)(doses)
-        marker_sizes  = [(9.0*dose+2.0)**2 for dose in norm_doses]
-        marker_colors = [(dose, 1.0-dose, 0.7, 1.0) for dose in norm_doses]
-        levels_at_group = levels_at_injections[group.index]
+    # Plot moments of dose administration as dose-scaled points on top
+    # of the simulated curve, independently for each kind of medication.
+    for medication, group in doses.groupby(by="medication"):
+        dose_amts       = group["dose"].values
+        norm_dose_amts  = Normalize(
+                vmin=-1.0*max(dose_amts),
+                vmax=max(dose_amts)+0.2)(dose_amts)
+        marker_sizes    = [(9.0 * dose_amt + 2.0) ** 2
+                for dose_amt in norm_dose_amts]
+        marker_colors   = [(dose_amt, 1.0 - dose_amt, 0.7, 1.0)
+                for dose_amt in norm_dose_amts]
+        levels_at_group = levels_at_doses[group.index]
         ax_pri.scatter(levels_at_group.index,
                        levels_at_group.values,
                        s=marker_sizes,
                        c=marker_colors,
-                       marker=injectables_markers[injectable],
+                       marker=medication_markers[medication],
                        zorder=2,
-                       label=f"{injectable} inj")
+                       label=f"{medication} med")
     ax_pri.legend()
 
     # Plot measured blood levels
@@ -658,7 +633,11 @@ def plotInjections(fig, ax,
         (mdates.date2num(d), m) for d,m in levels_at_measurements.items()]
 
     lines = list(zip(measurements_points, levels_at_measurements_points))
-    lc = mc.LineCollection(lines, linestyles=(0, (2, 3)), colors=(0.7, 0.3, 0.3, 1.0), zorder=3)
+    lc = mc.LineCollection(
+            lines,
+            linestyles=(0, (2, 3)),
+            colors=(0.7, 0.3, 0.3, 1.0),
+            zorder=3)
     ax_pri.add_collection(lc);
 
     for line in lines:
@@ -692,25 +671,25 @@ def plotInjections(fig, ax,
             txt.set_ha("center")
 
 
-def plotInjectionFrequencies(fig, ax, ef, sim_time, sim_freq, inj_freqs):
+def plotDosesFrequencies(fig, ax, ef, sim_time, sim_freq, dose_freqs):
     """
-    Plot multiple injection curves for a range of injection frequencies.
+    Plot multiple blood level curves for a range of dose frequencies.
 
     Parameters:
     ===========
-    ef         Interpolated function ef(T days) = (E mg) (from rawDVToFunc) for
-               a single injection.
-    sim_time   Total simulation time. [Days]
-    sim_freq   Resolution of simulaion. [Pandas frequency thing]
-    inj_freqs  List of period curves to plot. [Pandas frequency things]
+    ef          Interpolated function ef(T days) = (E mg) (from
+                medications.rawDoseResponseToEf) for a single dose.
+    sim_time    Total simulation time. [Days]
+    sim_freq    Resolution of simulaion. [Pandas frequency thing]
+    dose_freqs  List of period curves to plot. [Pandas frequency things]
     """
 
-    injectables = {"ef": ef}
-    for freq in inj_freqs:
-        plotInjections(
+    medications = {"ef": ef}
+    for freq in dose_freqs:
+        plotDoses(
             fig, ax,
-            createInjectionsCycle("ef", sim_time, freq),
-            injectables,
+            createDosesCycle("ef", sim_time, freq),
+            medications,
             sample_freq=sim_freq,
             label=f"{freq} freq")
 
