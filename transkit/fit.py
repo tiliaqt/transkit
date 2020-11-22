@@ -7,7 +7,7 @@ import pandas as pd
 from scipy.optimize import least_squares
 import warnings
 
-from injectio import pharma, medications
+from transkit import pharma, medications
 
 
 ####################################################

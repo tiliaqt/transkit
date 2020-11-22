@@ -7,7 +7,7 @@ sys.path.insert(1, os.path.join(sys.path[0], ".."))
 import numpy as np
 import pandas as pd
 import random
-from injectio import pharma
+from transkit import pharma
 
 random.seed()
 
