@@ -1,0 +1,66 @@
+name: Build
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.6, 3.7, 3.8]
+        poetry-version: [1.1.4]
+        os: [ubuntu-18.04]
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache Poetry
+        id: cache-poetry
+        uses: actions/cache@v2
+        env:
+          cache-name: cache-poetry
+        with:
+          path: |
+            ~/.poetry
+            ~/.profile
+            ~/.bash_profile
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.poetry-version }}
+
+      - name: Install Poetry
+        uses: Gr1N/setup-poetry@v4
+        if: steps.cache-poetry.outputs.cache-hit != 'true'
+        with:
+          poetry-version: ${{ matrix.poetry-version }}
+
+      - name: Set Poetry paths
+        id: poetry-paths
+        run: |
+          echo "$HOME/.poetry/bin" >> $GITHUB_PATH
+          source "$HOME/.poetry/env"
+          echo "::set-output name=dir::$(poetry config virtualenvs.path)"
+
+      - name: Cache dependencies
+        id: cache-deps
+        uses: actions/cache@v2
+        env:
+          cache-name: cache-poetry-deps
+        with:
+          path: ${{ steps.poetry-paths.outputs.dir }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-py${{ matrix.python-version }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-py${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: poetry install
+
+      - name: Run pre-commit checks
+        run: |
+          echo "$(poetry run python --version)"
+          poetry run pre-commit run --all-files
+

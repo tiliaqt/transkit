@@ -51,9 +51,13 @@ After installing dependencies with poetry, run:
 > poetry run pre-commit install
 ```
 
-Then, all the required checks will run before you can commit.
+Then, all the required checks will run before you can commit. You can also manually run them with:
 
-If the Black check fails, run:
+```
+> poetry run pre-commit run --all-files
+```
+
+If the formatting checks fail, run:
 
 ```
 > poetry run black .
