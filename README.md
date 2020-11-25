@@ -45,8 +45,21 @@ It outputs the html files to the `../trankit-pages` directory, and expects that 
 
 ## Developing
 
-TransKit uses [Black](https://github.com/psf/black) for code formatting and [Flake8](https://flake8.pycqa.org/en/latest/) for linting.
-They're set up to run in a pre-commit hook.
+TransKit uses [Pytest](https://docs.pytest.org/en/latest/) for running tests.
+You can run all the tests using:
+
+```
+> poetry run pytest
+```
+
+And you can generate a pretty code coverage report with:
+
+```
+> poetry run pytest --cov-report html --cov=transkit
+```
+
+We use [Black](https://github.com/psf/black) for code formatting and [Flake8](https://flake8.pycqa.org/en/latest/) for linting.
+They're required and are set up to run in a pre-commit hook.
 
 After installing dependencies with poetry, run:
 

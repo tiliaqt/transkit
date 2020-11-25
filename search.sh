@@ -7,6 +7,7 @@ ggrep --exclude-dir="backups"\
       --exclude-dir=".ipynb_checkpoints"\
       --exclude-dir="__pycache__"\
       --exclude-dir=".git"\
+      --exclude-dir="htmlcov"\
       --exclude-dir="transkit-pages"\
       --exclude-dir="transkit-fresh"\
       --exclude="*.swp"\

@@ -4,12 +4,12 @@ repos:
       - id: black
         name: Black
         entry: poetry run black
-        files: (transkit|tools)/.*\.pyi?$
+        files: (transkit|tools|tests)/.*\.pyi?$
         language: system
       - id: flake8
         name: Flake8
         entry: poetry run flake8
-        files: (transkit|tools)/.*\.pyi?$
+        files: (transkit|tools|tests)/.*\.pyi?$
         language: system
       - id: jupytext
         name: Jupytext Sync

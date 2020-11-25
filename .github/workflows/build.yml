@@ -64,3 +64,6 @@ jobs:
           echo "$(poetry run python --version)"
           poetry run pre-commit run --all-files
 
+      - name: Run tests
+        run: poetry run pytest -vv
+

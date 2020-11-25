@@ -81,8 +81,11 @@ def createDoses(dose_array, date_format=None, date_unit="ns"):
 
     df = pd.DataFrame(
         dose_array[:, 1:3],
-        index=pd.to_datetime(
-            dose_array[:, 0], format=date_format, unit=date_unit
+        index=pd.DatetimeIndex(
+            pd.to_datetime(
+                dose_array[:, 0], format=date_format, unit=date_unit
+            ),
+            freq="infer",
         ),
         columns=["dose", "medication"],
     )
@@ -117,8 +120,11 @@ def createMeasurements(measurements_array, date_format=None, date_unit="ns"):
 
     df = pd.DataFrame(
         measurements_array[:, 1:3],
-        index=pd.to_datetime(
-            measurements_array[:, 0], format=date_format, unit=date_unit
+        index=pd.DatetimeIndex(
+            pd.to_datetime(
+                measurements_array[:, 0], format=date_format, unit=date_unit
+            ),
+            freq="infer",
         ),
         columns=["value", "method"],
     )
