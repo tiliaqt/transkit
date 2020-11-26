@@ -1,4 +1,3 @@
-from collections import defaultdict
 from matplotlib import collections as mc
 from matplotlib import dates as mdates
 import numpy as np
@@ -46,7 +45,7 @@ def partitionDoses(doses, equal_doses):
     # be small, and this is a lot simpler!
 
     eq_sets = [set(e) for e in equal_doses]
-    partitions = [{dose_idx} for dose_idx in doses.index]
+    partitions = [{dose_time} for dose_time in doses.index]
     p = 0
     while p < len(partitions):
         to_del = set()
@@ -63,7 +62,7 @@ def partitionDoses(doses, equal_doses):
 
 def createInitialAndBounds(
     doses,
-    max_dose=np.inf,
+    dose_bounds=(0.0, np.inf),
     time_bounds="midpoints",
     equal_doses=[],
 ):
@@ -90,7 +89,19 @@ def createInitialAndBounds(
     Parameters:
     ===========
     doses        Initial doses to be optimized.
-    max_dose     Maximum dose amount bound that will be used in the fitting.
+    dose_bounds  Specifies how dose amounts will be bounded in the
+                 fitting. A single dose bound can be specified as either
+                 a (min_dose, max_dose) 2-tuple or a string specifying
+                 specific bound behavior. Dose_bounds can either be an
+                 Iterable of those single dose bounds corresponding to
+                 the bounds for each dose, or a single dose bound that
+                 will be used for all doses. If dose_bounds is used in
+                 conjunction with equal_doses, the bound corresponding
+                 to the first dose in each partition will be used for
+                 the entire parttion. Possible string options are:
+                    'fixed': The dose will be fixed to its initial
+                             value and won't be optimized.
+                 Defaults to (0.0, np.inf).
     time_bounds  Specfies how dose times will be bounded in the
                  fitting. Can either be an Iterable of strings
                  corresponding to the time bound behavior for each
@@ -101,8 +112,10 @@ def createInitialAndBounds(
                                  bounded to the midpoints between their
                                  nearest neighboring doses (default).
     equal_doses  A list of DatetimeIndexes where each DatetimeIndex
-                 corresponds to doses that should be constrained to
-                 have the same amount."""
+                 corresponds to doses that should be constrained to have
+                 the same amount, partitioning the doses. The initial
+                 doses are set by the first dose within each
+                 partition."""
 
     if len(doses) == 0:
         raise ValueError("Need at least 1 initial dose to optimize.")
@@ -116,12 +129,27 @@ def createInitialAndBounds(
             RuntimeWarning,
         )
 
+    if isinstance(dose_bounds, str) or (
+        isinstance(dose_bounds, tuple)
+        and not isinstance(dose_bounds[0], tuple)
+    ):
+        # It's a single string or a single tuple, and not a
+        # tuple-of-tuples, or some other Iterable.
+        dose_bounds = len(doses) * [dose_bounds]
+    elif len(dose_bounds) != len(doses):
+        raise ValueError(
+            f"Expecting either a single 2-tuple, a single string, or "
+            f"an Iterable of length len(doses)={len(doses)} for "
+            f"dose_bounds, but got {type(dose_bounds)} of length "
+            f"{len(dose_bounds)}."
+        )
+
     if isinstance(time_bounds, str):
         time_bounds = len(doses) * [time_bounds]
     elif len(time_bounds) != len(doses):
         raise ValueError(
-            "Expecting either a single string or an Iterable of length "
-            f"len(doses)={len(doses)} for time_bounds, but got "
+            f"Expecting either a single string or an Iterable of "
+            f"length len(doses)={len(doses)} for time_bounds, but got "
             f"{type(time_bounds)} of length {len(time_bounds)}."
         )
 
@@ -167,23 +195,48 @@ def createInitialAndBounds(
         else:
             raise ValueError(f"'{tb}' isn't a valid input in time_bounds.")
 
-    # This gives equivalence classes of Datetimes, but ultimately we
-    # need equivalence classes of dose indices because the exact times
-    # will change through the optimization and no longer be valid
-    # indices. What we later return from this function is essentially
-    # telling which doses amounts in X correspond to which times in X.
     partitions = partitionDoses(doses, equal_doses)
+
+    # partitionDoses gives equivalence classes of Datetimes, but
+    # ultimately we need equivalence classes of dose *indices* because
+    # the exact times will change through the optimization and no longer
+    # be valid indices. What we later return from this function is
+    # essentially telling which dose amounts in X correspond to which
+    # times in X.
+    part_indices = [
+        {list(doses.index).index(dose_time) for dose_time in part}
+        for part in partitions
+    ]
+
     part_doses = np.zeros(len(partitions))
+    d_bounds = []
     for p in range(len(partitions)):
-        part_doses[p] = doses["dose"][partitions[p][0]]
-    d_bounds = [(0.0, max_dose)] * len(partitions)
+        # Use the amount of the first dose in this partition as the
+        # initial value for the entire partition.
+        amount = doses["dose"][partitions[p][0]]
+        part_doses[p] = amount
+
+        # Use the bound of the first dose in this partition as the bound
+        # for the entire partition.
+        db = dose_bounds[next(iter(part_indices[p]))]
+        if isinstance(db, str):
+            if db == "fixed":
+                d_bounds.append((amount, np.nextafter(amount, amount + 1.0)))
+            else:
+                raise ValueError(
+                    f"'{db}' isn't a valid string option in dose_bounds."
+                )
+        elif isinstance(db, tuple) and len(db) == 2:
+            d_bounds.append(db)
+        else:
+            raise ValueError(
+                f"'{db}' isn't a valid string or 2-tuple bound in "
+                f"dose_bounds"
+            )
 
     return (
         np.concatenate((times, part_doses)),
-        [
-            {list(doses.index).index(dose_idx) for dose_idx in part}
-            for part in partitions
-        ],
+        part_indices,
         tuple(zip(*t_bounds, *d_bounds)),
     )
 
@@ -228,26 +281,11 @@ def createDosesFromX(X, X_partitions, X_medications):
     )
 
 
-def emptyResults():
-    return defaultdict(
-        lambda: {
-            "doses_init": None,
-            "X0": None,
-            "partitions": None,
-            "bounds": None,
-            "exclude_area": pd.DatetimeIndex([]),
-            "target": None,
-            "result": None,
-            "doses_optim": None,
-        }
-    )
-
-
-def initializeRun(
+def initializeFit(
     doses_init,
     medications_map,
     target,
-    max_dose=np.inf,
+    dose_bounds=(0.0, np.inf),
     time_bounds="midpoints",
     equal_doses=[],
     exclude_area=pd.DatetimeIndex([]),
@@ -257,8 +295,7 @@ def initializeRun(
     tidy dict.
 
     Returns a dict containing all the relevant information about the
-    optimization run (see emptyResults for structure), ready to be used
-    with runLeastSquares.
+    optimization run, ready to be used with runLeastSquares.
 
     Parameters:
     ===========
@@ -267,7 +304,7 @@ def initializeRun(
                       (see medications.medications).
     target            Target function to fit the blood level curve to
                       [Pandas series index by Datetime].
-    max_dose          See createInitialAndBounds.
+    dose_bounds       See createInitialAndBounds.
     time_bounds       See createInitialAndBounds.
     equal_doses       See createInitialAndBounds.
     exclude_area      DatetimeIndex corresponding to points in target
@@ -278,7 +315,7 @@ def initializeRun(
     run["medications_map"] = medications_map
     run["X0"], run["partitions"], run["bounds"] = createInitialAndBounds(
         doses_init,
-        max_dose=max_dose,
+        dose_bounds=dose_bounds,
         time_bounds=time_bounds,
         equal_doses=equal_doses,
     )
@@ -297,10 +334,13 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
         X, X_partitions, X_medications, medications_map, target, exclude_area
     ):
         doses = createDosesFromX(X, X_partitions, X_medications)
-        residuals = pharma.zeroLevelsAtMoments(target.index)
-        pharma.calcBloodLevelsConv(residuals, doses, medications_map)
-        residuals -= target
-        return residuals.drop(exclude_area)
+        included_target = target[
+            target.index.isin(exclude_area) == False  # noqa: E712
+        ]
+        residuals = pharma.zeroLevelsAtMoments(included_target.index)
+        pharma.calcBloodLevelsExact(residuals, doses, medications_map)
+        residuals -= included_target
+        return residuals
 
     result = least_squares(
         fTimesAndDoses,

@@ -9,6 +9,7 @@ from matplotlib.colors import Normalize
 import numpy as np
 import pandas as pd
 from scipy import signal
+from scipy.stats import mode
 import warnings
 
 
@@ -234,20 +235,29 @@ def rep_from_dose(date, dose, ef, n, freq):
     return [*zip(dose_dates, doses, n * [ef])]
 
 
-def zeroLevelsFromDoses(doses, sample_freq, upper_bound="midnight"):
+def zeroLevelsFromDoses(
+    doses,
+    sample_freq,
+    lower_bound="midnight",
+    upper_bound="midnight",
+):
     """
     Intelligently create a simulation window for the doses.
 
     Returns a Pandas series of zeros indexed by time across the entire range of
     doses, sampled at a given frequency. The range of the returned series
-    is big enough to include all the input doses. The lower bound of the
-    window is midnight (00h:00m) of the day of the first dose, and the
-    upper bound is controlled by the upper_bound parameter.
+    is big enough to include all the input doses.
 
     Parameters:
     ===========
-    doses   DataFrame of doses (see createDoses(...)).
+    doses        DataFrame of doses (see createDoses(...)).
     sample_freq  Sample frequency [Pandas frequency string].
+    lower_bound  String specifying how to handle the lower bound of the
+                 window. Possible options are:
+                    'midnight': Lower bound will be midnight (00h:00m)
+                                of the day of the first dose. (default)
+                    'exact':    Lower bound will be the exact time of
+                                the first dose.
     upper_bound  1- or 2-tuple specifying how to handle the upper bound
                  of the window. The first value of the tuple is a string
                  chooding the the method of handling, and if present the
@@ -259,23 +269,36 @@ def zeroLevelsFromDoses(doses, sample_freq, upper_bound="midnight"):
                                         following the last dose.
                      ('continue', n=1): Upper bound will be the first
                                         sample greater than the period
-                                        as if the last dose was repeated
-                                        n times, using the time between
-                                        the last two dses as the period.
-                                        Requires at least two doses.
-                    ('timedelta', t):   Upper bound will be the first
+                                        as if the most common dosing
+                                        interval was repeated n times
+                                        after the last dose. Requires at
+                                        least two doses.
+               ('domain', medications): Upper bound will be the first
+                                        sample greater than the domain
+                                        of the last dose. Argument is a
+                                        mapping of mediations.
+                      ('timedelta', t): Upper bound will be the first
                                         sample greater than timedelta t
                                         after the last dose. t is
                                         required and may be either a
                                         pandas.TimeDelta or a number of
                                         days.
-                    ('datetime', t):    Upper bound will be the first
+                       ('datetime', t): Upper bound will be the first
                                         sample greater than the time t.
                                         t is required and can be any
                                         date parsable by
                                         pandas.to_datetime.
                  ('midnight') is the default method."""
 
+    # Handle the lower bound
+    if lower_bound == "midnight":
+        start_time = doses.index[0].floor("D")
+    elif lower_bound == "exact":
+        start_time = doses.index[0]
+    else:
+        raise ValueError("lower_bound parameter '{lower_bound}' isn't valid.")
+
+    # Handle the upper bound
     if isinstance(upper_bound, str):
         upper_bound = (upper_bound,)
 
@@ -292,8 +315,18 @@ def zeroLevelsFromDoses(doses, sample_freq, upper_bound="midnight"):
             )
 
         n = 1 if ub_param is None else ub_param
-        freq = doses.index[-1] - doses.index[-2]
-        end_time = doses.index[-1] + n * freq
+        interval = np.max(
+            mode((doses.index[1:] - doses.index[:-1]).round("1D")).mode
+        )
+        end_time = doses.index[-1] + n * interval
+    elif ub_method == "domain":
+        if ub_param is None:
+            raise ValueError(
+                "upper_bound method 'domain' requires an argument."
+            )
+
+        dose_ef = ub_param[doses.iloc[-1]["medication"]]
+        end_time = doses.index[-1] + dose_ef.domain[1]
     elif ub_method == "timedelta":
         if ub_param is None:
             raise ValueError(
@@ -311,8 +344,6 @@ def zeroLevelsFromDoses(doses, sample_freq, upper_bound="midnight"):
         end_time = pd.to_datetime(ub_param)
     else:
         raise ValueError("upper_bound method '{ub_method}' isn't valid.")
-
-    start_time = doses.index[0].floor("D")
 
     # If our end_time isn't properly aligned, increment it by one sample
     # period and let date_range truncate to the correctly aligned end.
@@ -596,7 +627,7 @@ def plotDoses(
     estradiol_measurements=pd.DataFrame(),
     sample_freq="15min",
     label="",
-    upper_bound=("continue", 1),
+    upper_bound=("continue", 2),
 ):
     """
     Plot the continuous, simulated curve of blood levels for a series of

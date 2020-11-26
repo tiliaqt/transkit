@@ -87,11 +87,11 @@ doses = pharma.createDosesCycle(
     menstrual_fit_range_t,
     '3D',
     start_date=menstrual_fit_start_t)
-menstrual_fit_results["ec"] = fit.initializeRun(
+menstrual_fit_results["ec"] = fit.initializeFit(
     doses,
     calibrated_medications,
     menstrual_fit,
-    max_dose=10.0,
+    dose_bounds=(0.0, 10.0),
     time_bounds=14*['fixed'] + (len(doses)-14)*['midpoints'],
     equal_doses=[doses.index[:13]], # All injections in the ramp-up to steady-state should be equal
     exclude_area=menstrual_fit[:doses.index[12]].index) # Only optimize starting from the first injection after steady-state
@@ -126,11 +126,11 @@ doses = pharma.createDosesCycle(
     menstrual_fit_range_t,
     '3D',
     start_date=menstrual_fit_start_t)
-menstrual_fit_results["ev"] = fit.initializeRun(
+menstrual_fit_results["ev"] = fit.initializeFit(
     doses,
     calibrated_medications,
     menstrual_fit,
-    max_dose=10.0,
+    dose_bounds=(0.0, 10.0),
     time_bounds=14*['fixed'] + (len(doses)-14)*['midpoints'],
     equal_doses=[doses.index[:14]], # All injections in the ramp-up to steady-state should be equal
     exclude_area=menstrual_fit[:doses.index[13]].index) # Only optimize starting from the first injection after steady-state
@@ -172,11 +172,11 @@ sine_results = fit.emptyResults()
 Works ok, doesn't find a great solution right now.
 
 ```python
-sine_results["ec_doses"] = fit.initializeRun(
+sine_results["ec_doses"] = fit.initializeFit(
     pharma.createDosesCycle("ec", 90.0, '3D', start_date="2020"),
     calibrated_medications,
     sine_target,
-    max_dose=5.0,
+    dose_bounds=(0.0, 5.0),
     time_bounds='fixed')
 fit.runLeastSquares(
     sine_results["ec_doses"],
@@ -201,11 +201,11 @@ This works awesome!
 
 ```python
 doses = pharma.createDosesCycle("ec", 90.0, '3D', start_date="2020")
-sine_results["ec_doses_and_times"] = fit.initializeRun(
+sine_results["ec_doses_and_times"] = fit.initializeFit(
     doses,
     calibrated_medications,
     sine_target,
-    max_dose=5.0,
+    dose_bounds=(0.0, 5.0),
     time_bounds=['fixed'] + (len(doses)-1)*['midpoints'])
 fit.runLeastSquares(
     sine_results["ec_doses_and_times"],
@@ -231,11 +231,11 @@ At reasonable injection schedules, EV just really doesn't work for doing any kin
 
 ```python
 doses = pharma.createDosesCycle("ev", 90.0, '3D', start_date="2020")
-sine_results["ev_doses_and_times"] = fit.initializeRun(
+sine_results["ev_doses_and_times"] = fit.initializeFit(
     doses,
     calibrated_medications,
     sine_target,
-    max_dose=5.0,
+    dose_bounds=(0.0, 5.0),
     time_bounds=['fixed'] + (len(doses)-1)*['midpoints'])
 fit.runLeastSquares(
     sine_results["ev_doses_and_times"],
@@ -270,11 +270,11 @@ step_results = fit.emptyResults()
 ```
 
 ```python
-step_results["ec_doses_and_times"] = fit.initializeRun(
+step_results["ec_doses_and_times"] = fit.initializeFit(
     pharma.createDosesCycle("ec", 62.0, '3D'),
     calibrated_medications,
     step_target,
-    max_dose=5.0,
+    dose_bounds=(0.0, 5.0),
     time_bounds=7*['fixed'] + 8*['midpoints'] + 6*['fixed'])
 fit.runLeastSquares(
     step_results["ec_doses_and_times"],
