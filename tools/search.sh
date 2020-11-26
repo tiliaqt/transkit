@@ -2,7 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-cd "$DIR/.."
+cd "$DIR/../.."
 ggrep --exclude-dir="backups"\
       --exclude-dir=".ipynb_checkpoints"\
       --exclude-dir="__pycache__"\

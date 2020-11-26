@@ -6,8 +6,10 @@ All dependencies are handled using [Poetry](https://python-poetry.org/), and are
 All the dependencies you need to work with these notebooks will be installed in a virtualenv specifically for this project using:
 
 ```
-> poetry install
+> poetry install -D
 ```
+
+If you don't want to follow steps, you can also run the `./tools/install.sh` script.
 
 ## Usage
 
@@ -31,16 +33,18 @@ hormones/
         notebooks/
             TransKit.ipynb
             ...
-        lab.sh
-        publish.sh
+        tools/
+            lab.sh
+            publish.sh
+            ...
         ...
     transkit-pages/
         <html files>
 ```
 
-To start Jupyter so that it can access both directories, you can run the `./lab.sh` script.
+To start Jupyter so that it can access both directories, you can run the `./tools/lab.sh` script.
 
-To cut an html release of the notebooks for publishing, run the `./publish.sh` script.
+To cut an html release of the notebooks for publishing, run the `./tools/publish.sh` script.
 It outputs the html files to the `../trankit-pages` directory, and expects that to exist.
 
 ## Developing
