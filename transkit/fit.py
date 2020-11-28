@@ -1,9 +1,13 @@
+import math
 from matplotlib import collections as mc
 from matplotlib import dates as mdates
 import numpy as np
 import pandas as pd
-from scipy.optimize import least_squares
+from scipy.integrate import simps
+from scipy.interpolate import interp1d
+from scipy.optimize import least_squares, root_scalar
 import warnings
+
 
 from transkit import pharma, medications
 
@@ -364,6 +368,253 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
     run["doses_optim"] = doses_optim
 
     return result
+
+
+def returnToSteady(
+    doses,
+    steady_amount,
+    steady_interval,
+    steady_medication,
+    medications,
+    soonest_dose_time=None,
+    stabilize_time=None,
+    ideal_tod=None,
+):
+    """
+    Determine a dosing regimen to get to steady-state.
+
+    Parameters:
+    ===========
+    doses              Starting doses to continue to steady-state.
+    steady_amount      Dose amount at steady-state in mg.
+    steady_interval    Dose interval at steady-state, as a Pandas
+                       frequency offset or string.
+    steady_medication  Medication to dose at steady-state (string
+                       corresponding to a medication in medications).
+    medications        Dict of medication dose-response functions (see
+                       medications.medications).
+    soonest_dose_time  Time of the soonest possible dose. Typically
+                       you might pass pd.Timestamp.now() as the value.
+                       Defaults to None. The first new dose will be at
+                       this time if either dosing ASAP is the best
+                       approach to return to steady-state, or if the
+                       ideal dose time is in the past relative to this
+                       time.
+    stabilize_time     Determines how new doses will be stabilized to
+                       reach steady-state. If None, no stabilization
+                       will be done. If 0.0, only the first new dose
+                       will be stabilized. If np.inf, all new doses will
+                       be stabilized. Any other floating point number is
+                       the time range in days after the first new dose
+                       within which new doses should be stabilized. When
+                       stabilizing, least squares is used to optimize
+                       the dose amounts to best fit steady-state
+                       concentration.
+    ideal_tod          Time of day when doses should ideally occur,
+                       as a Pandas frequency offset or string specifying
+                       the offset from midnight. Defaults to None, in
+                       which case new doses will occurr at
+                       steady_interval intervals after the time of the
+                       first new dose.
+    """
+
+    interval_offset = pd.tseries.frequencies.to_offset(steady_interval)
+    interval_days = interval_offset.nanos * 1e-9 / 60.0 / 60.0 / 24.0
+
+    # Estimate steady state concentrations
+    med = medications[steady_medication]
+    med_dom = pharma.timeDeltaToDays(med.domain[1] - med.domain[0])
+    n_doses_ss = math.ceil(med_dom / interval_days)
+    med_x = np.linspace(
+        pharma.timeDeltaToDays(med.domain[0]),
+        pharma.timeDeltaToDays(med.domain[1]),
+        1000,
+    )
+    c_ss = simps(steady_amount * med(med_x), x=med_x) / interval_days
+    c_trough = np.sum(
+        steady_amount
+        * med(
+            np.arange(
+                interval_days, interval_days * (n_doses_ss + 1), interval_days
+            )
+        )
+    )
+
+    levels_after = pharma.calcBloodLevelsExact(
+        pharma.zeroLevelsFromDoses(
+            doses.iloc[-1:],
+            "15min",
+            lower_bound="exact",
+            upper_bound=("domain", medications),
+        ),
+        doses,
+        medications,
+    )
+
+    # Find where the levels curve instersects with the steady-state trough.
+    # We look for the descending-side intersection that occurs after the
+    # maximum concentration following the last dose.
+    peak_t = levels_after.idxmax()
+    root_bracket = (
+        pharma.timeDeltaToDays(peak_t - levels_after.index[0]),
+        pharma.timeDeltaToDays(levels_after.index[-1] - levels_after.index[0]),
+    )
+
+    if levels_after[peak_t] >= c_trough:
+        # If levels rise to or over the steady-state trough, time the next dose
+        # at the time levels either touch the trough levels or descend back to
+        # the trough levels.
+
+        interp_levels = interp1d(
+            pharma.timeDeltaToDays(levels_after.index - levels_after.index[0]),
+            levels_after.values - c_trough,
+        )
+        root = root_scalar(interp_levels, bracket=root_bracket)
+
+        if not root.converged:
+            # This shouldn't happen
+            raise RuntimeError(
+                "uh oh, couldn't figure out where to put the next injection"
+            )
+
+        next_dose_t = doses.index[-1] + pd.to_timedelta(root.root, unit="D")
+
+    elif peak_t > levels_after.index[0]:
+        # If levels don't reach the trough, but do rise after the last dose,
+        # time the next dose at either the next steady interval, or the point
+        # at which the levels would fall below where they started.
+
+        interp_levels = interp1d(
+            pharma.timeDeltaToDays(levels_after.index - levels_after.index[0]),
+            levels_after.values - levels_after.iloc[0],
+        )
+        root = root_scalar(interp_levels, bracket=root_bracket)
+
+        if not root.converged:
+            # This shouldn't happen
+            raise RuntimeError(
+                "uh oh, couldn't figure out where to put the next injection"
+            )
+
+        root_dose_t = doses.index[-1] + pd.to_timedelta(root.root, unit="D")
+        interval_dose_t = pharma.snapToTime(
+            doses.index[-1] + interval_offset,
+            snap_to=ideal_tod,
+        )
+        if root_dose_t <= interval_dose_t:
+            next_dose_t = root_dose_t
+        else:
+            next_dose_t = interval_dose_t
+
+    else:
+        # If levels don't reach the trough and immediately fall after the
+        # last dose, time the next dose either as soon as possible, or at
+        # the next steady interval.
+
+        next_dose_t = pharma.snapToTime(
+            doses.index[-1] + interval_offset,
+            snap_to=ideal_tod,
+        )
+
+        if (
+            soonest_dose_time is not None
+            and soonest_dose_time > levels_after.index[0]
+            and soonest_dose_time < next_dose_t
+        ):
+            next_dose_t = soonest_dose_time
+
+    # Make sure we're not dosing in the past.
+    if soonest_dose_time is not None and soonest_dose_time > next_dose_t:
+        next_dose_t = soonest_dose_time
+
+    # Ideally the followup dose would also happen by that same logic,
+    # and would happen when crossing the trough, but it's challenging
+    # becuase it can only be fully determined after stabilizing the first
+    # dose (and stabilizing the first dose requires stabilizing the whole
+    # series of doses). We could potentially do this recursively for each
+    # subsequent dose--I don't know if it would be faster or slower than
+    # doing least_squares.
+    followup_dose_t = pharma.snapToTime(
+        next_dose_t + interval_offset,
+        snap_to=ideal_tod,
+    )
+
+    new_doses = pd.concat(
+        [
+            doses,
+            pharma.createDoses(
+                np.array([[next_dose_t, steady_amount, steady_medication]])
+            ),
+            pharma.createDoses(
+                np.array(
+                    pharma.rep_from(
+                        [followup_dose_t, steady_amount, steady_medication],
+                        n=n_doses_ss - 1,
+                        freq=steady_interval,
+                    )
+                )
+            ),
+        ]
+    )
+
+    if stabilize_time is None:
+        return (new_doses, None)
+
+    else:
+        # Now adjust the new doses so they are stable around the average
+        # steady-state concentration.
+        # TODO: I wonder if i could get close by estimating the number
+        # of missed doses?
+
+        if stabilize_time == np.inf:
+            # Stabilize with all of the succeeding doses
+            stabilizing_doses = new_doses[next_dose_t:]
+        else:
+            # Stabilize only within the specified window
+            stabilizing_max_t = next_dose_t + pd.to_timedelta(
+                stabilize_time, unit="D"
+            )
+            stabilizing_doses = new_doses[next_dose_t:stabilizing_max_t]
+
+        # All doses after the stabilizing doses should be fixed.
+        dose_bounds = (
+            len(doses) * ["fixed"]
+            + len(stabilizing_doses) * [(0.0, np.inf)]
+            + (
+                (len(new_doses) - len(stabilizing_doses) - len(doses))
+                * ["fixed"]
+            )
+        )
+
+        # All doses after the stabilizing doses should be equal.
+        ndi = new_doses.index
+        equal_doses = [
+            new_doses[
+                (ndi.isin(doses.index) == False)  # noqa: E712
+                & (ndi.isin(stabilizing_doses.index) == False)  # noqa: E712
+            ].index
+        ]
+
+        fit_ss = pharma.zeroLevelsFromDoses(new_doses, "12H")
+        fit_ss.values[:] += c_ss
+        fit_run = initializeFit(
+            new_doses,
+            medications,
+            fit_ss,
+            time_bounds="fixed",
+            dose_bounds=dose_bounds,
+            equal_doses=equal_doses,
+            exclude_area=fit_ss[:next_dose_t].index,
+        )
+
+        with warnings.catch_warnings():
+            # least_squares sometimes divides by zero with the way we use
+            # infinitesimal ranges to represent fixed bounds. Just suppress
+            # the warning about it.
+            warnings.simplefilter("ignore")
+            runLeastSquares(fit_run, max_nfev=25, ftol=1e-2)
+
+        return (fit_run["doses_optim"], fit_run)
 
 
 def plotOptimizationRun(fig, ax, run):

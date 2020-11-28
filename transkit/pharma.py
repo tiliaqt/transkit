@@ -51,6 +51,29 @@ def timeDeltaToDays(td):
     )
 
 
+def snapToTime(date, snap_to=None):
+    """
+    Parameters:
+    date     Timestamp or DatetimeIndex of times to be adjusted.
+    snap_to  Time of day to snap to, represented as a pandas frequency
+             offset from midnight."""
+
+    if snap_to is not None:
+        snap_offset = pd.tseries.frequencies.to_offset(snap_to)
+        if snap_offset >= pd.tseries.frequencies.to_offset("1D"):
+            raise ValueError(
+                f"Snap time must be less than 24 hours, but got '{snap_to}'."
+            )
+
+        snap_sec = snap_offset.nanos * 1e-9
+        date_day = date.floor("D")
+        tod_sec = (date - date_day).total_seconds()
+        if tod_sec == 0 or tod_sec % snap_sec != 0:
+            return date_day + snap_offset
+
+    return date
+
+
 ###################################
 ### Doses Creation Routines ###
 
