@@ -64,7 +64,7 @@ def partitionDoses(doses, equal_doses):
     return [pd.DatetimeIndex(part).sort_values() for part in partitions]
 
 
-def createInitialAndBounds(
+def createX0AndBounds(
     doses,
     dose_bounds=(0.0, np.inf),
     time_bounds="midpoints",
@@ -72,22 +72,59 @@ def createInitialAndBounds(
 ):
     """
     Create the initial X vector of independent variables that will be
-    optimized, the partitions of equal-amount doses, and the bounds
-    corresponding to X.
+    optimized and the bounds corresponding to each parameter in X.
+
+    With the given constraints, this constructs the minimal set of
+    parameters to be optimized. It does this by first partitioning doses
+    per the constraints of equal_doses such that for each partition,
+    there is only a single parameter in a vector D corresponding to the
+    amount. Let D be the concatenation of dose times and partitioned
+    amounts, and let r = |D|.
+
+    Next, the vector of parameters is reduced so that only dose times
+    and partitioned amounts that have non-fixed bounds are present.
+    Construct an r x r diagonal matrix R st. diag(R) equals 1 where the
+    corresponding parameter in D has a non-fixed bound, and -1 where it
+    has a fixed bound. Now, construct matrices M and N from R where M
+    contains the columns of R where the diagonal equals 1 (non-fixed
+    parameters), and N contains the absolute value of the columns of R
+    where the diagonal equals -1 (fixed parameters). Calculate X (the
+    vector of non-fixed parameters to be optimized) and F (the vector of
+    fixed parameters that are not used in the optimization) such that:
+
+    D = X @ M.T + F @ N.T
+
+    This results in a fully reduced X vector of parameters, plus a
+    mapping to reconstruct the full set of doses.
 
     Returns a 3-tuple of: (
         X:          Vector of independent variables that will be
                     optimized by least_squares, represented as a stacked
-                    array of len(doses) dose times in days, followed by
-                    len(partitions) dose amounts.
-        partitions: Equal-amount partitions of doses, represented as a
-                    list P of partitions, where each P[j] is a set {i_0,
-                    ..., i_k} of integer indices representing the doses
-                    contained in the partition, and X[len(doses)-1+j] is
-                    the dose amount corresponding to the partition.
+                    array of times and partitioned doses, reduced such
+                    that only the parameters that have non-fixed bounds
+                    are present.
         bounds:     2-tuple of ([lower_0, ...],[upper_0, ...]) bounds
                     on the independent variables in X, as expected by
                     least_squares.
+        X_mapping:  Contains all the information needed to reconstruct
+                    the full set of doses from the partitioned and
+                    reduced X vector. createDosesFromX implements this
+                    inverse. It is a 4-tuple of: (
+            F:           Vector of times and partitioned doses with
+                         fixed bounds that were reduced out of D.
+            R_diag:      The diagonal of the matrix R which encodes the
+                         mapping of parameters with non-fixed and fixed
+                         bounds.
+            partitions:  Equal-amount partitions of doses, represented
+                         as a list P of partitions, where each P[j] is a
+                         set {i_0, ..., i_k} of integer indices
+                         representing the doses contained in the
+                         partition, and D[len(doses)-1+j] is the dose
+                         amount corresponding to the partition.
+            medications: Column of medications corresponding to each
+                         dose, exactly as it was in the original doses
+                         DataFrame.
+        )
     )
 
     Parameters:
@@ -119,7 +156,10 @@ def createInitialAndBounds(
                  corresponds to doses that should be constrained to have
                  the same amount, partitioning the doses. The initial
                  doses are set by the first dose within each
-                 partition."""
+                 partition. If any dose in a partition has a 'fixed'
+                 bound in dose_bounds, the entire partition will be
+                 fixed. Otherwise, the bound of the first dose in the
+                 partition will be used."""
 
     if len(doses) == 0:
         raise ValueError("Need at least 1 initial dose to optimize.")
@@ -157,6 +197,9 @@ def createInitialAndBounds(
             f"{type(time_bounds)} of length {len(time_bounds)}."
         )
 
+    R_diag = []
+    X_bounds = []
+
     # least_squares works on float parameters, so convert our dose dates
     # into float days.
     times = pharma.dateTimeToDays(doses.index)
@@ -170,7 +213,6 @@ def createInitialAndBounds(
         + [(midpoints[-1], 2 * times[-1] - midpoints[-1])]
     )
 
-    t_bounds = []
     for ti in range(len(times)):
         tb = time_bounds[ti]
         if tb == "midpoints":
@@ -182,24 +224,20 @@ def createInitialAndBounds(
             #    same distance away as the previous midpoint, but
             #    mirrored to the positive direction.
             #   All other bounds are at the midpoints between dose times.
-            t_bounds.append(midpoint_bounds[ti])
+            R_diag.append(1)
+            X_bounds.append(midpoint_bounds[ti])
         elif tb == "fixed":
-            # least_squares doesn't have in-built capacity for fixed
-            # parameters, and also requires each lower bound to be
-            # strictly less than each upper bound. This is basically a
-            # hack to avoid requiring different implementations for
-            # optimizing on amounts+times vs just amounts, keeping the
-            # same array X of independent variables in both cases.
-            t_bounds.append(
-                (
-                    times[ti],
-                    np.nextafter(times[ti], times[ti] + 1.0),
-                )
-            )
+            R_diag.append(-1)
         else:
             raise ValueError(f"'{tb}' isn't a valid input in time_bounds.")
 
-    partitions = partitionDoses(doses, equal_doses)
+    def pickDoseBound(dbs, part):
+        # Return "fixed" if any dose bound of the partition is "fixed",
+        # otherwise return the first dose bound of the partition.
+        for d in part:
+            if dbs[d] == "fixed":
+                return "fixed"
+        return dbs[next(iter(part))]
 
     # partitionDoses gives equivalence classes of Datetimes, but
     # ultimately we need equivalence classes of dose *indices* because
@@ -207,45 +245,50 @@ def createInitialAndBounds(
     # be valid indices. What we later return from this function is
     # essentially telling which dose amounts in X correspond to which
     # times in X.
+    partitions = partitionDoses(doses, equal_doses)
     part_indices = [
         {list(doses.index).index(dose_time) for dose_time in part}
         for part in partitions
     ]
 
     part_doses = np.zeros(len(partitions))
-    d_bounds = []
     for p in range(len(partitions)):
         # Use the amount of the first dose in this partition as the
         # initial value for the entire partition.
         amount = doses["dose"][partitions[p][0]]
         part_doses[p] = amount
 
-        # Use the bound of the first dose in this partition as the bound
-        # for the entire partition.
-        db = dose_bounds[next(iter(part_indices[p]))]
-        if isinstance(db, str):
-            if db == "fixed":
-                d_bounds.append((amount, np.nextafter(amount, amount + 1.0)))
-            else:
-                raise ValueError(
-                    f"'{db}' isn't a valid string option in dose_bounds."
-                )
+        db = pickDoseBound(dose_bounds, part_indices[p])
+        if isinstance(db, str) and db == "fixed":
+            R_diag.append(-1)
         elif isinstance(db, tuple) and len(db) == 2:
-            d_bounds.append(db)
+            R_diag.append(1)
+            X_bounds.append(db)
         else:
             raise ValueError(
                 f"'{db}' isn't a valid string or 2-tuple bound in "
                 f"dose_bounds"
             )
 
+    # Reduce D into vector X of non-fixed parameters and F of fixed
+    # parameters.
+    D = np.concatenate([times, part_doses])
+    R_diag = np.array(R_diag)
+    R = np.diag(R_diag)
+    M = R[:, np.sum(R > 0, axis=1) > 0]
+    N = np.abs(R[:, np.sum(R < 0, axis=1) > 0])
+
+    X = (D @ M).flatten()
+    F = (D @ N).flatten()
+
     return (
-        np.concatenate((times, part_doses)),
-        part_indices,
-        tuple(zip(*t_bounds, *d_bounds)),
+        X,
+        tuple(zip(*X_bounds)),
+        (F, R_diag, part_indices, doses["medication"].values),
     )
 
 
-def createDosesFromX(X, X_partitions, X_medications):
+def createDosesFromX(X, X_mapping):
     """
     Create a doses DataFrame from the stacked X vector of independent
     variables.
@@ -258,21 +301,27 @@ def createDosesFromX(X, X_partitions, X_medications):
 
     Parameters:
     ===========
-    X               X vector of independent variables (see
-                    createInitialAndBounds).
-    X_partitions    Equal-amount partitions of doses (see
-                    createInitialAndBounds). It is used to unpartition
-                    the dose amounts in X.
-    X_medications   Column of medications corresponding to each dose,
-                    exactly as it was in the original doses
-                    DataFrame."""
+    X          X vector of independent variables (see
+               createX0AndBounds).
+    X_mapping  4-tuple of the information required to reconstruct the
+               full set of doses from the partitioned and reduced X
+               vector. (see createX0AndBounds)."""
 
-    n_doses = X.size - len(X_partitions)
+    F = X_mapping[0]
+    R = np.diag(X_mapping[1])
+    X_partitions = X_mapping[2]
+    X_medications = X_mapping[3]
 
-    times = X[0:n_doses]
+    # Unreduce X and add back the fixed parameters
+    M = R[:, np.sum(R > 0, axis=1) > 0]
+    N = np.abs(R[:, np.sum(R < 0, axis=1) > 0])
+    D = X @ M.T + F @ N.T
+
+    n_doses = D.size - len(X_partitions)
+    times = D[0:n_doses]
+    part_dose_amts = D[n_doses:]
 
     # Unpartition the doses
-    part_dose_amts = X[n_doses:]
     dose_amts = np.zeros_like(times)
     for p in range(len(X_partitions)):
         for d in X_partitions[p]:
@@ -308,16 +357,16 @@ def initializeFit(
                       (see medications.medications).
     target            Target function to fit the blood level curve to
                       [Pandas series index by Datetime].
-    dose_bounds       See createInitialAndBounds.
-    time_bounds       See createInitialAndBounds.
-    equal_doses       See createInitialAndBounds.
+    dose_bounds       See createX0AndBounds.
+    time_bounds       See createX0AndBounds.
+    equal_doses       See createX0AndBounds.
     exclude_area      DatetimeIndex corresponding to points in target
                       that should not be considered when computing
                       residuals for the fit."""
     run = {}
     run["doses_init"] = doses_init
     run["medications_map"] = medications_map
-    run["X0"], run["partitions"], run["bounds"] = createInitialAndBounds(
+    run["X0"], run["bounds"], run["X_mapping"] = createX0AndBounds(
         doses_init,
         dose_bounds=dose_bounds,
         time_bounds=time_bounds,
@@ -331,13 +380,9 @@ def initializeFit(
 
 
 def runLeastSquares(run, max_nfev=20, **kwargs):
-    X_medications = run["doses_init"]["medication"].values
-
     # Residuals function
-    def fTimesAndDoses(
-        X, X_partitions, X_medications, medications_map, target, exclude_area
-    ):
-        doses = createDosesFromX(X, X_partitions, X_medications)
+    def fTimesAndDoses(X, X_mapping, medications_map, target, exclude_area):
+        doses = createDosesFromX(X, X_mapping)
         included_target = target[
             target.index.isin(exclude_area) == False  # noqa: E712
         ]
@@ -350,8 +395,7 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
         fTimesAndDoses,
         run["X0"],
         args=(
-            run["partitions"],
-            X_medications,
+            run["X_mapping"],
             run["medications_map"],
             run["target"],
             run["exclude_area"],
@@ -362,7 +406,7 @@ def runLeastSquares(run, max_nfev=20, **kwargs):
     )
 
     # Put the optimized X vector back into a DataFrame
-    doses_optim = createDosesFromX(result.x, run["partitions"], X_medications)
+    doses_optim = createDosesFromX(result.x, run["X_mapping"])
 
     run["result"] = result
     run["doses_optim"] = doses_optim
