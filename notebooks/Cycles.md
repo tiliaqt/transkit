@@ -98,6 +98,7 @@ menstrual_fit_results["ec"] = fit.initializeFit(
 fit.runLeastSquares(
     menstrual_fit_results["ec"],
     max_nfev=35,
+    ftol=1e-2,
     verbose=2);
 ```
 
@@ -137,6 +138,7 @@ menstrual_fit_results["ev"] = fit.initializeFit(
 fit.runLeastSquares(
     menstrual_fit_results["ev"],
     max_nfev=35,
+    ftol=1e-2,
     verbose=2);
 ```
 
@@ -181,6 +183,7 @@ sine_results["ec_doses"] = fit.initializeFit(
 fit.runLeastSquares(
     sine_results["ec_doses"],
     max_nfev=35,
+    ftol=1e-3,
     verbose=2);
 ```
 
@@ -209,8 +212,8 @@ sine_results["ec_doses_and_times"] = fit.initializeFit(
     time_bounds=['fixed'] + (len(doses)-1)*['midpoints'])
 fit.runLeastSquares(
     sine_results["ec_doses_and_times"],
-    xtol=None,
     max_nfev=30,
+    ftol=1e-3,
     verbose=2);
 ```
 
@@ -240,6 +243,7 @@ sine_results["ev_doses_and_times"] = fit.initializeFit(
 fit.runLeastSquares(
     sine_results["ev_doses_and_times"],
     max_nfev=25,
+    ftol=1e-3,
     verbose=2);
 ```
 
@@ -278,8 +282,8 @@ step_results["ec_doses_and_times"] = fit.initializeFit(
     time_bounds=7*['fixed'] + 8*['midpoints'] + 6*['fixed'])
 fit.runLeastSquares(
     step_results["ec_doses_and_times"],
-    xtol=None,
     max_nfev=35,
+    ftol=1e-3,
     verbose=2);
 ```
 

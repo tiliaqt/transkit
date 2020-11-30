@@ -76,6 +76,11 @@ def test_X0_and_bounds():
         ]
     )
 
+    with pytest.raises(ValueError):
+        fit.createX0AndBounds(doses, dose_bounds="dexif")
+    with pytest.raises(ValueError):
+        fit.createX0AndBounds(doses, time_bounds="dexif")
+
     # No partitions and no fixed bounds
     validateX0AndBounds(
         doses,
