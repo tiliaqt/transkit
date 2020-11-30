@@ -204,14 +204,15 @@ def createX0AndBounds(
     # into float days.
     times = pharma.dateTimeToDays(doses.index)
 
-    # Pregenerate all the midpoint bounds even if we don't end up using
-    # them. It simplifies the loop a lot.
-    midpoints = (times[:-1] + times[1:]) / 2.0
-    midpoint_bounds = (
-        [(2 * times[0] - midpoints[0], midpoints[0])]
-        + [(lb, rb) for lb, rb in zip(midpoints[:-1], midpoints[1:])]
-        + [(midpoints[-1], 2 * times[-1] - midpoints[-1])]
-    )
+    # If we need them, pregenerate all the midpoint bounds, even if we
+    # only end up using a subset of them. It simplifies the loop a lot.
+    if any(map(lambda tb: tb == "midpoints", time_bounds)):
+        midpoints = (times[:-1] + times[1:]) / 2.0
+        midpoint_bounds = (
+            [(2 * times[0] - midpoints[0], midpoints[0])]
+            + [(lb, rb) for lb, rb in zip(midpoints[:-1], midpoints[1:])]
+            + [(midpoints[-1], 2 * times[-1] - midpoints[-1])]
+        )
 
     for ti in range(len(times)):
         tb = time_bounds[ti]
@@ -283,7 +284,7 @@ def createX0AndBounds(
 
     return (
         X0,
-        tuple(zip(*X_bounds)),
+        tuple(zip(*X_bounds)) if len(X_bounds) > 0 else (-np.inf, np.inf),
         (F, R_diag, part_indices, doses["medication"].values),
     )
 
