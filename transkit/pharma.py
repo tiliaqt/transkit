@@ -118,7 +118,7 @@ def createDoses(dose_array, date_format=None, date_unit="ns"):
     else:
         raise ValueError(
             f"Can only create doses from a 2D array with 3 columns, "
-            f"but {dose_array.shape=}."
+            f"but dose_array.shape={dose_array.shape}."
         )
 
     df = pd.DataFrame(
@@ -175,7 +175,7 @@ def createMeasurements(measurements_array, date_format=None, date_unit="ns"):
     else:
         raise ValueError(
             f"Can only create measurements from a 2D array with 3 columns, "
-            f"but {measurements_array.shape=}."
+            f"but measurements_array.shape={measurements_array.shape}."
         )
 
     df = pd.DataFrame(
