@@ -8,7 +8,7 @@ from matplotlib import ticker as mticker
 from matplotlib.colors import Normalize
 import numpy as np
 import pandas as pd
-from scipy import signal
+from scipy import interpolate, signal
 from scipy.stats import mode
 import warnings
 
@@ -103,17 +103,32 @@ def createDoses(dose_array, date_format=None, date_unit="ns"):
     date_unit    Passed through to the unit parameter of
                  pandas.to_datetime(...)."""
 
+    if not isinstance(dose_array, np.ndarray):
+        dose_array = np.array(dose_array)
+
+    if len(dose_array) == 0 or (
+        dose_array.ndim == 2
+        and (dose_array.shape[0] == 0 or dose_array.shape[1] == 0)
+    ):
+        dates = []
+        amount_meds = []
+    elif dose_array.ndim == 2 and dose_array.shape[1] == 3:
+        dates = dose_array[:, 0]
+        amount_meds = dose_array[:, 1:3]
+    else:
+        raise ValueError(
+            f"Can only create doses from a 2D array with 3 columns, "
+            f"but {dose_array.shape=}."
+        )
+
     df = pd.DataFrame(
-        dose_array[:, 1:3],
+        amount_meds,
         index=pd.DatetimeIndex(
-            pd.to_datetime(
-                dose_array[:, 0], format=date_format, unit=date_unit
-            ),
+            pd.to_datetime(dates, format=date_format, unit=date_unit),
             freq="infer",
         ),
         columns=["dose", "medication"],
-    )
-    df.loc[:, "dose"] = df["dose"].apply(pd.to_numeric)
+    ).astype({"dose": np.float64, "medication": np.object})
     return df
 
 
@@ -142,17 +157,35 @@ def createMeasurements(measurements_array, date_format=None, date_unit="ns"):
     date_unit           Passed through to the unit parameter of
                         pandas.to_datetime(...)."""
 
+    if not isinstance(measurements_array, np.ndarray):
+        measurements_array = np.array(measurements_array)
+
+    if len(measurements_array) == 0 or (
+        measurements_array.ndim == 2
+        and (
+            measurements_array.shape[0] == 0
+            or measurements_array.shape[1] == 0
+        )
+    ):
+        dates = []
+        value_method = []
+    elif measurements_array.ndim == 2 and measurements_array.shape[1] == 3:
+        dates = measurements_array[:, 0]
+        value_method = measurements_array[:, 1:3]
+    else:
+        raise ValueError(
+            f"Can only create measurements from a 2D array with 3 columns, "
+            f"but {measurements_array.shape=}."
+        )
+
     df = pd.DataFrame(
-        measurements_array[:, 1:3],
+        value_method,
         index=pd.DatetimeIndex(
-            pd.to_datetime(
-                measurements_array[:, 0], format=date_format, unit=date_unit
-            ),
+            pd.to_datetime(dates, format=date_format, unit=date_unit),
             freq="infer",
         ),
         columns=["value", "method"],
-    )
-    df.loc[:, "value"] = df["value"].apply(pd.to_numeric)
+    ).astype({"value": np.float64, "method": np.object})
     return df
 
 
@@ -600,6 +633,86 @@ def calcBloodLevelsConv(zero_levels, doses, medications):
     return zero_levels
 
 
+#################################################################
+### Helper functions for working with Dose Response functions ###
+
+
+def normalizedDoseResponse(ef, ef_dose):
+    def ef_norm(T):
+        return ef(T) / ef_dose
+
+    ef_norm.domain = ef.domain
+    return ef_norm
+
+
+def calibratedDoseResponse(ef, X):
+    """
+    Wraps the dose response function ef and transforms it by the linear
+    power series specified by the first-order polynomial coefficients in
+    ndarray X, such that:
+
+        calibratedDoseResponse(ef, X)(T) = X[0] + X[1]*ef(T)
+    """
+
+    def ef_cali(T):
+        return X[0] + X[1] * ef(T)
+
+    ef_cali.domain = ef.domain
+    return ef_cali
+
+
+def rawDoseResponseToEf(raw):
+    """
+    Converts an ndarray of flaot(Day),float(pg/mL) pairs into an
+    interpolated function ef:
+
+        ef(time_since_dose [Days]) = blood concentration [pg/mL]
+
+    representing the instantaneous total blood concentration of the
+    medication at the given time after administration.
+
+    Expects two zero values at both the start and end, used to tweak the
+    slope of the interpolated curve to end at 0.0. Ef must be positive
+    and continuous across the domain of the input data, and equal to 0.0
+    outside that domain. This is required for later computations using
+    this function to operate correctly.
+
+    The returned function ef is called in the inner loop of all
+    subsequent computations, so it is heavily optimized for performance
+    by constructing lookup tables of the interpolated function. LUT
+    table sizes < 100000 seem to make first derivatives of ef get
+    wiggly."""
+
+    interp_ef = interpolate.interp1d(
+        raw[:, 0],
+        raw[:, 1],
+        kind="cubic",
+        fill_value=(0.0, 0.0),
+        bounds_error=False,
+    )
+    min_x = raw[1, 0]
+    max_x = raw[-2, 0]
+    sample_x = np.linspace(min_x, max_x, num=100000)
+    sample_y = np.array([interp_ef(x) for x in sample_x])
+    slope_lut = (sample_y[1:] - sample_y[:-1]) / (sample_x[1:] - sample_x[:-1])
+
+    def ef(x):
+        idx = np.searchsorted(sample_x, x) - 1
+        return np.where(
+            np.logical_or(x <= min_x, x >= max_x),
+            np.zeros_like(x),
+            sample_y[idx]
+            + (x - sample_x[idx]) * np.take(slope_lut, idx, mode="clip"),
+        )
+
+    ef.domain = (
+        pd.to_timedelta(min_x, unit="D"),
+        pd.to_timedelta(max_x, unit="D"),
+    )
+
+    return ef
+
+
 ################
 ### Plotting ###
 
@@ -831,7 +944,7 @@ def plotDosesFrequencies(fig, ax, ef, sim_time, sim_freq, dose_freqs):
     Parameters:
     ===========
     ef          Interpolated function ef(T days) = (E mg) (from
-                medications.rawDoseResponseToEf) for a single dose.
+                rawDoseResponseToEf) for a single dose.
     sim_time    Total simulation time. [Days]
     sim_freq    Resolution of simulaion. [Pandas frequency thing]
     dose_freqs  List of period curves to plot. [Pandas frequency things]

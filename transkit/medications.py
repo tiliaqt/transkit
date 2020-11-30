@@ -1,86 +1,7 @@
 import numpy as np
 import pandas as pd
-from scipy import interpolate
 
-
-#################################################################
-### Helper functions for working with Dose Response functions ###
-
-
-def normalizedDoseResponse(ef, ef_dose):
-    def ef_norm(T):
-        return ef(T) / ef_dose
-
-    ef_norm.domain = ef.domain
-    return ef_norm
-
-
-def calibratedDoseResponse(ef, X):
-    """
-    Wraps the dose response function ef and transforms it by the linear
-    power series specified by the first-order polynomial coefficients in
-    ndarray X, such that:
-
-        calibratedDoseResponse(ef, X)(T) = X[0] + X[1]*ef(T)
-    """
-
-    def ef_cali(T):
-        return X[0] + X[1] * ef(T)
-
-    ef_cali.domain = ef.domain
-    return ef_cali
-
-
-def rawDoseResponseToEf(raw):
-    """
-    Converts an ndarray of flaot(Day),float(pg/mL) pairs into an
-    interpolated function ef:
-
-        ef(time_since_dose [Days]) = blood concentration [pg/mL]
-
-    representing the instantaneous total blood concentration of the
-    medication at the given time after administration.
-
-    Expects two zero values at both the start and end, used to tweak the
-    slope of the interpolated curve to end at 0.0. Ef must be positive
-    and continuous across the domain of the input data, and equal to 0.0
-    outside that domain. This is required for later computations using
-    this function to operate correctly.
-
-    The returned function ef is called in the inner loop of all
-    subsequent computations, so it is heavily optimized for performance
-    by constructing lookup tables of the interpolated function. LUT
-    table sizes < 100000 seem to make first derivatives of ef get
-    wiggly."""
-
-    interp_ef = interpolate.interp1d(
-        raw[:, 0],
-        raw[:, 1],
-        kind="cubic",
-        fill_value=(0.0, 0.0),
-        bounds_error=False,
-    )
-    min_x = raw[1, 0]
-    max_x = raw[-2, 0]
-    sample_x = np.linspace(min_x, max_x, num=100000)
-    sample_y = np.array([interp_ef(x) for x in sample_x])
-    slope_lut = (sample_y[1:] - sample_y[:-1]) / (sample_x[1:] - sample_x[:-1])
-
-    def ef(x):
-        idx = np.searchsorted(sample_x, x) - 1
-        return np.where(
-            np.logical_or(x <= min_x, x >= max_x),
-            np.zeros_like(x),
-            sample_y[idx]
-            + (x - sample_x[idx]) * np.take(slope_lut, idx, mode="clip"),
-        )
-
-    ef.domain = (
-        pd.to_timedelta(min_x, unit="D"),
-        pd.to_timedelta(max_x, unit="D"),
-    )
-
-    return ef
+from transkit import pharma
 
 
 ##########################################
@@ -120,7 +41,7 @@ ec_level_1mg = np.array(
         [38.0, 0.0],
     ]
 )
-ef_ec_1mg = rawDoseResponseToEf(ec_level_1mg)
+ef_ec_1mg = pharma.rawDoseResponseToEf(ec_level_1mg)
 
 
 # Estradiol Cypionate 5.0mg
@@ -151,8 +72,8 @@ ec_level_5mg = np.array(
         [25.0, 0.0],
     ]
 )
-ef_ec_5mg = rawDoseResponseToEf(ec_level_5mg)
-ef_ec_5mg_norm = normalizedDoseResponse(ef_ec_5mg, 5.0)
+ef_ec_5mg = pharma.rawDoseResponseToEf(ec_level_5mg)
+ef_ec_5mg_norm = pharma.normalizedDoseResponse(ef_ec_5mg, 5.0)
 
 
 # Estradiol Valerate 5.0mg
@@ -179,8 +100,8 @@ ev_level_5mg = np.array(
         [22.0, 0.0],
     ]
 )
-ef_ev_5mg = rawDoseResponseToEf(ev_level_5mg)
-ef_ev_5mg_norm = normalizedDoseResponse(ef_ev_5mg, 5.0)
+ef_ev_5mg = pharma.rawDoseResponseToEf(ev_level_5mg)
+ef_ev_5mg_norm = pharma.normalizedDoseResponse(ef_ev_5mg, 5.0)
 
 
 medications = {

@@ -3,18 +3,34 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from transkit import pharma, medications
+from transkit import pharma
+
+
+def are_close(A, B, rel_tol=1e-15, abs_tol=np.nextafter(0, 1)):
+    # Different calculation methods can result in some slight floating
+    # point differences (on the order of 1e-14), so just make sure the
+    # values are close within a tolerance. I suspect it's a difference
+    # from calculating relative time in days.
+
+    close = [
+        math.isclose(a, b, rel_tol=rel_tol, abs_tol=abs_tol)
+        for a, b in zip(A, B)
+    ]
+    return all(close)
 
 
 @pytest.fixture
-def doses_5doses_4days():
+def doses_5doses_4days(simple_meds):
+    med = simple_meds[0]
+    medications = simple_meds[1]
+
     doses = pharma.createDoses(
         np.array(
-            pharma.rep_from(["2020.Jan.01.1200", 1.0, "ec"], n=5, freq="4D")
+            pharma.rep_from(["2020.Jan.01.1200", 1.0, med], n=5, freq="4D")
         )
     )
 
-    ec = medications.medications["ec"]
+    ec = medications[med]
     actual_levels = pharma.createMeasurements(
         np.array(
             pharma.rep_from_dose(
@@ -43,16 +59,19 @@ def doses_5doses_4days():
 
 
 @pytest.fixture
-def doses_12doses_5days():
+def doses_12doses_5days(simple_meds):
+    med = simple_meds[0]
+    medications = simple_meds[1]
+
     """Doses spread over a greater time than the domain of the medication."""
     doses = pharma.createDoses(
         np.array(
-            pharma.rep_from(["2020.Jan.01.1200", 2.0, "ec"], n=12, freq="6D")
+            pharma.rep_from(["2020.Jan.01.1200", 2.0, med], n=12, freq="6D")
         )
     )
 
     def ec(T):
-        return 2.0 * medications.medications["ec"](T)
+        return 2.0 * medications[med](T)
 
     actual_levels = pharma.createMeasurements(
         np.array(
@@ -97,7 +116,40 @@ def doses_12doses_5days():
     return (doses, actual_levels)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Creating an ndarray from ragged:numpy.VisibleDeprecationWarning"
+)
 def test_create_doses():
+    empty = pharma.createDoses([])
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+    empty = pharma.createDoses([[]])
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+    empty = pharma.createDoses(np.array([]))
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+    empty = pharma.createDoses(np.array([[]]))
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+    empty = pharma.createDoses(np.array([[], []]))
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+
+    one = pharma.createDoses([["2020", 1, "med"]])
+    assert len(one) == 1 and one.shape[0] == 1 and one.shape[1] == 2
+    one = pharma.createDoses(np.array([["2020", 1, "med"]]))
+    assert len(one) == 1 and one.shape[0] == 1 and one.shape[1] == 2
+    assert one.dtypes[0] == np.float64 and one.dtypes[1] == np.object
+
+    with pytest.raises(ValueError):
+        pharma.createDoses(["2020", 1, "med"])  # Require 2D
+    with pytest.raises(ValueError):
+        pharma.createDoses(np.array(["2020", 1, "med"]))  # Require 2D
+    with pytest.raises(ValueError):
+        pharma.createDoses([[], ["2020", 1, "med"]])  # No ragged
+    with pytest.raises(ValueError):
+        pharma.createDoses([["2020", 1]])  # Not enough cols
+    with pytest.raises(ValueError):
+        pharma.createDoses([["2020", 1, "med", "no"]])  # Too many cols
+    with pytest.raises(ValueError):
+        pharma.createDoses([["2020"], [1], ["med"]])  # Wrong shape
+
     arr = np.array(
         [
             ["2020.Jan.01.1200", 1.0, "ec"],
@@ -108,102 +160,140 @@ def test_create_doses():
         ]
     )
     doses = pharma.createDoses(arr)
-    assert len(doses) == 5
+    assert len(doses) == 5 and doses.shape[0] == 5 and doses.shape[1] == 2
+    assert doses.dtypes[0] == np.float64 and doses.dtypes[1] == np.object
 
 
-def test_levels_exact1(doses_5doses_4days):
+@pytest.mark.filterwarnings(
+    "ignore:Creating an ndarray from ragged:numpy.VisibleDeprecationWarning"
+)
+def test_create_measurements():
+    empty = pharma.createMeasurements([])
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+    empty = pharma.createMeasurements([[]])
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+    empty = pharma.createMeasurements(np.array([]))
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+    empty = pharma.createMeasurements(np.array([[]]))
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+    empty = pharma.createMeasurements(np.array([[], []]))
+    assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
+
+    one = pharma.createMeasurements([["2020", 1, "med"]])
+    assert len(one) == 1 and one.shape[0] == 1 and one.shape[1] == 2
+    one = pharma.createMeasurements(np.array([["2020", 1, "med"]]))
+    assert len(one) == 1 and one.shape[0] == 1 and one.shape[1] == 2
+    assert one.dtypes[0] == np.float64 and one.dtypes[1] == np.object
+
+    with pytest.raises(ValueError):
+        pharma.createMeasurements(["2020", 1, "med"])  # Require 2D
+    with pytest.raises(ValueError):
+        pharma.createMeasurements(np.array(["2020", 1, "med"]))  # Require 2D
+    with pytest.raises(ValueError):
+        pharma.createMeasurements([[], ["2020", 1, "med"]])  # No ragged
+    with pytest.raises(ValueError):
+        pharma.createMeasurements([["2020", 1]])  # Not enough cols
+    with pytest.raises(ValueError):
+        pharma.createMeasurements([["2020", 1, "med", "no"]])  # Too many cols
+    with pytest.raises(ValueError):
+        pharma.createMeasurements([["2020"], [1], ["med"]])  # Wrong shape
+
+    arr = np.array(
+        [
+            ["2020.Jan.01.1200", 1.0, "eclia"],
+            ["2020.Jan.06.1200", 1.0, "eclia"],
+            ["2020.Jan.11.1200", 1.0, "eclia"],
+            ["2020.Jan.16.1200", 1.0, "eclia"],
+            ["2020.Jan.21.1200", 1.0, "eclia"],
+        ]
+    )
+    measurements = pharma.createMeasurements(arr)
+    assert (
+        len(measurements) == 5
+        and measurements.shape[0] == 5
+        and measurements.shape[1] == 2
+    )
+    assert (
+        measurements.dtypes[0] == np.float64
+        and measurements.dtypes[1] == np.object
+    )
+
+
+def test_levels_exact1(doses_5doses_4days, simple_meds):
     doses = doses_5doses_4days[0]
     actual_levels = doses_5doses_4days[1]
+    medications = simple_meds[1]
 
     levels_calcexact = pharma.calcBloodLevelsExact(
         pharma.zeroLevelsAtMoments(actual_levels.index),
         doses,
-        medications.medications,
+        medications,
     )
-    assert (actual_levels == levels_calcexact).all()
+    assert are_close(levels_calcexact, actual_levels)
 
 
-def test_levels_exact2(doses_12doses_5days):
+def test_levels_exact2(doses_12doses_5days, simple_meds):
     doses = doses_12doses_5days[0]
     actual_levels = doses_12doses_5days[1]
+    medications = simple_meds[1]
 
     levels_calcexact = pharma.calcBloodLevelsExact(
         pharma.zeroLevelsAtMoments(actual_levels.index),
         doses,
-        medications.medications,
+        medications,
     )
-
-    # Different calculation method in this test case results in some
-    # slight floating point differences (on the order of 1e-14), so just
-    # make sure the values are close within a tolerance. I suspect it's
-    # a difference from calculating relative time in days.
-    close = [
-        math.isclose(c, a, rel_tol=1e-15, abs_tol=np.nextafter(0, 1))
-        for c, a in zip(levels_calcexact, actual_levels)
-    ]
-    assert all(close)
+    assert are_close(levels_calcexact, actual_levels)
 
 
-def test_levels_conv1(doses_5doses_4days):
+def test_levels_conv1(doses_5doses_4days, simple_meds):
     doses = doses_5doses_4days[0]
     actual_levels = doses_5doses_4days[1]
+    medications = simple_meds[1]
 
     levels_calcconv = pharma.calcBloodLevelsConv(
         pharma.zeroLevelsAtMoments(actual_levels.index),
         doses,
-        medications.medications,
+        medications,
     )
-    assert (actual_levels == levels_calcconv).all()
+    assert are_close(levels_calcconv, actual_levels)
 
 
-def test_levels_conv2(doses_12doses_5days):
+def test_levels_conv2(doses_12doses_5days, simple_meds):
     doses = doses_12doses_5days[0]
     actual_levels = doses_12doses_5days[1]
+    medications = simple_meds[1]
 
     levels_calcconv = pharma.calcBloodLevelsConv(
         pharma.zeroLevelsAtMoments(actual_levels.index),
         doses,
-        medications.medications,
+        medications,
     )
-
-    # Different calculation method in this test case results in some
-    # slight floating point differences (on the order of 1e-14), so just
-    # make sure the values are close within a tolerance. I suspect it's
-    # a difference from calculating relative time in days.
-    close = [
-        math.isclose(c, a, rel_tol=1e-15, abs_tol=np.nextafter(0, 1))
-        for c, a in zip(levels_calcconv, actual_levels)
-    ]
-    assert all(close)
+    assert are_close(levels_calcconv, actual_levels)
 
 
-def test_conv_aligned(doses_12doses_5days):
+def test_conv_aligned(doses_12doses_5days, simple_meds):
     """
     With a 1 minute sampling frequency and dose times aligned to the
     minutes, Exact and Conv should return the same results within
     a very small tolerance."""
 
     doses = doses_12doses_5days[0]
+    medications = simple_meds[1]
 
     levels_calcexact = pharma.calcBloodLevelsExact(
         pharma.zeroLevelsFromDoses(doses, "1min"),
         doses,
-        medications.medications,
+        medications,
     )
     levels_calcconv = pharma.calcBloodLevelsConv(
         pharma.zeroLevelsFromDoses(doses, "1min"),
         doses,
-        medications.medications,
+        medications,
     )
-
-    close = [
-        math.isclose(e, c, rel_tol=1e-15, abs_tol=1e-12)
-        for e, c in zip(levels_calcexact, levels_calcconv)
-    ]
-    assert all(close)
+    assert are_close(levels_calcexact, levels_calcconv, abs_tol=1e-12)
 
 
-def test_conv_error(doses_12doses_5days):
+def test_conv_error(doses_12doses_5days, simple_meds):
     """
     With a 31 minute sampling frequency, Exact and Conv should be
     numerically different, but the error of Conv should be within a
@@ -211,25 +301,27 @@ def test_conv_error(doses_12doses_5days):
     with any samples."""
 
     doses = doses_12doses_5days[0]
+    medications = simple_meds[1]
 
     levels_calcexact = pharma.calcBloodLevelsExact(
         pharma.zeroLevelsFromDoses(doses, "31min"),
         doses,
-        medications.medications,
+        medications,
     )
     levels_calcconv = pharma.calcBloodLevelsConv(
         pharma.zeroLevelsFromDoses(doses, "31min"),
         doses,
-        medications.medications,
+        medications,
     )
 
     err = (levels_calcexact - levels_calcconv).abs()
-    assert (err < 0.003).all()
-    assert err.mean() < 0.0006
+    assert (err < 0.025).all()
+    assert err.mean() < 0.003
 
 
-def test_levels_conv_input(doses_5doses_4days):
+def test_levels_conv_input(doses_5doses_4days, simple_meds):
     doses = doses_5doses_4days[0]
+    medications = simple_meds[1]
 
     # Test that Conv warns when the sample space doesn't appear to have
     # fixed frequency.
@@ -239,7 +331,7 @@ def test_levels_conv_input(doses_5doses_4days):
                 pd.to_datetime([0.0, 1.0, 2.0, 4.0], unit="D")
             ),
             doses,
-            medications.medications,
+            medications,
         )
 
     # Test that Conv fails where there are doses before the start of the
@@ -252,5 +344,5 @@ def test_levels_conv_input(doses_5doses_4days):
                 )
             ),
             doses,
-            medications.medications,
+            medications,
         )

@@ -36,10 +36,10 @@ t3_ec_cali = np.array([0.000000000, 0.246635358])
 t2_ev_cali = np.array([0.000000000, 1.428689307])
 
 calibrated_medications = dict(medications.medications)
-calibrated_medications["ec"] = medications.calibratedDoseResponse(
+calibrated_medications["ec"] = pharma.calibratedDoseResponse(
     calibrated_medications["ec"],
     t3_ec_cali)
-calibrated_medications["ev"] = medications.calibratedDoseResponse(
+calibrated_medications["ev"] = pharma.calibratedDoseResponse(
     calibrated_medications["ev"],
     t2_ev_cali)
 ```

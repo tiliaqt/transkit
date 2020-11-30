@@ -9,7 +9,7 @@ from scipy.optimize import least_squares, root_scalar
 import warnings
 
 
-from transkit import pharma, medications
+from transkit import pharma
 
 
 ####################################################
@@ -98,7 +98,7 @@ def createX0AndBounds(
     mapping to reconstruct the full set of doses.
 
     Returns a 3-tuple of: (
-        X:          Vector of independent variables that will be
+        X0:         Vector of independent variables that will be
                     optimized by least_squares, represented as a stacked
                     array of times and partitioned doses, reduced such
                     that only the parameters that have non-fixed bounds
@@ -278,11 +278,11 @@ def createX0AndBounds(
     M = R[:, np.sum(R > 0, axis=1) > 0]
     N = np.abs(R[:, np.sum(R < 0, axis=1) > 0])
 
-    X = (D @ M).flatten()
+    X0 = (D @ M).flatten()
     F = (D @ N).flatten()
 
     return (
-        X,
+        X0,
         tuple(zip(*X_bounds)),
         (F, R_diag, part_indices, doses["medication"].values),
     )
@@ -757,9 +757,7 @@ def calibrateDoseResponse_lsqpoly(
 
     # Residuals function
     def f(X):
-        calibrated_medications[
-            medication
-        ] = medications.calibratedDoseResponse(
+        calibrated_medications[medication] = pharma.calibratedDoseResponse(
             uncalibrated_medications[medication], X
         )
         levels_at_measurements = pharma.calcBloodLevelsExact(
@@ -778,7 +776,7 @@ def calibrateDoseResponse_lsqpoly(
         max_nfev=10,
         verbose=0,
     )
-    calibrated_medications[medication] = medications.calibratedDoseResponse(
+    calibrated_medications[medication] = pharma.calibratedDoseResponse(
         uncalibrated_medications[medication],
         result.x,
     )
@@ -829,7 +827,7 @@ def calibrateDoseResponse_meanscale(
     )
 
     calibrated_medications = dict(uncalibrated_medications)
-    calibrated_medications[medication] = medications.calibratedDoseResponse(
+    calibrated_medications[medication] = pharma.calibratedDoseResponse(
         uncalibrated_medications[medication],
         cali_X,
     )
