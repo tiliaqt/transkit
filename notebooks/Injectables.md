@@ -81,19 +81,51 @@ sys.path.insert(0, "../")
 from transkit import pharma, medications
 ```
 
+```python
+t3_ec_cali = np.array([0.000000000, 0.246635358])
+t2_ev_cali = np.array([0.000000000, 1.428689307])
+
+calibrated_medications = dict(medications.medications)
+calibrated_medications["ec"] = pharma.calibratedDoseResponse(
+    calibrated_medications["ec"],
+    t3_ec_cali)
+calibrated_medications["ev"] = pharma.calibratedDoseResponse(
+    calibrated_medications["ev"],
+    t2_ev_cali)
+```
+
 ## Injection Curves
 
 ```python
+from scipy.integrate import simps, cumtrapz
+
+ec = calibrated_medications["ec"]
+ec_x = np.linspace(
+    pharma.timeDeltaToDays(ec.domain[0]),
+    pharma.timeDeltaToDays(ec.domain[1]),
+    1000
+)
+ev = calibrated_medications["ev"]
+ev_x = np.linspace(
+    pharma.timeDeltaToDays(ev.domain[0]),
+    pharma.timeDeltaToDays(ev.domain[1]),
+    1000
+)
+
 fig,ax = pharma.startPlot()
-target_x = np.linspace(-5.0, 40.0, num=1000)
-ec_1mg_y = np.array([medications.ef_ec_1mg(T) for T in target_x])
-ev_5mg_y = np.array([medications.ef_ev_5mg(T) for T in target_x])
+ax.set_title("Dose Response Concentration-time Curves")
+ax.plot(ec_x, ec(ec_x), label="Estradiol Cypionate (1mg)")
+ax.plot(ev_x, ev(ev_x), label="Estradiol Valerate (1mg normalized)")
+ax.legend()
 
-ax.plot(medications.ec_level_1mg[:,0], medications.ec_level_1mg[:,1], 'o')
-ax.plot(target_x, ec_1mg_y)
+fig,ax = pharma.startPlot()
+ax.set_title("Cumulative Concentration-time Curves")
+ax.plot(ec_x, cumtrapz(ec(ec_x), x=ec_x, initial=0.0), label="Estradiol Cypionate (1mg)")
+ax.plot(ev_x, cumtrapz(ev(ev_x), x=ev_x, initial=0.0), label="Estradiol Valerate (1mg normalized)")
+ax.legend()
 
-ax.plot(medications.ev_level_5mg[:,0], medications.ev_level_5mg[:,1], 'o')
-ax.plot(target_x, ev_5mg_y);
+print(f"EC AUC = {simps(ec(ec_x), x=ec_x)} pg-days/mL")
+print(f"EV AUC = {simps(ev(ev_x), x=ev_x)} pg-days/mL")
 ```
 
 ## Depot effects of injection frequencies
