@@ -82,8 +82,8 @@ from transkit import pharma, medications
 ```
 
 ```python
-t3_ec_cali = np.array([0.000000000, 0.246635358])
-t2_ev_cali = np.array([0.000000000, 1.428689307])
+t3_ec_cali = np.array([0.000000000, 0.900172119])
+t2_ev_cali = np.array([0.000000000, 1.468750000])
 
 calibrated_medications = dict(medications.medications)
 calibrated_medications["ec"] = pharma.calibratedDoseResponse(
@@ -99,64 +99,70 @@ calibrated_medications["ev"] = pharma.calibratedDoseResponse(
 ```python
 from scipy.integrate import simps, cumtrapz
 
-ec = calibrated_medications["ec"]
+ec = medications.medications["ec"]
+ec_cal = calibrated_medications["ec"]
 ec_x = np.linspace(
-    pharma.timeDeltaToDays(ec.domain[0]),
-    pharma.timeDeltaToDays(ec.domain[1]),
+    0.0,
+    90.0,
     1000
 )
-ev = calibrated_medications["ev"]
+ev = medications.medications["ev"]
+ev_cal = calibrated_medications["ev"]
 ev_x = np.linspace(
-    pharma.timeDeltaToDays(ev.domain[0]),
-    pharma.timeDeltaToDays(ev.domain[1]),
+    0.0,
+    90.0,
     1000
 )
 
 fig,ax = pharma.startPlot()
 ax.set_title("Dose Response Concentration-time Curves")
 ax.plot(ec_x, ec(ec_x), label="Estradiol Cypionate (1mg)")
-ax.plot(ev_x, ev(ev_x), label="Estradiol Valerate (1mg normalized)")
+ax.plot(ec_x, ec_cal(ec_x), label="Estradiol Cypionate (1mg, calibrated)")
+ax.plot(ev_x, ev(ev_x), label="Estradiol Valerate (1mg)")
+ax.plot(ev_x, ev_cal(ev_x), label="Estradiol Valerate (1mg, calibrated)")
 ax.legend()
 
 fig,ax = pharma.startPlot()
 ax.set_title("Cumulative Concentration-time Curves")
 ax.plot(ec_x, cumtrapz(ec(ec_x), x=ec_x, initial=0.0), label="Estradiol Cypionate (1mg)")
-ax.plot(ev_x, cumtrapz(ev(ev_x), x=ev_x, initial=0.0), label="Estradiol Valerate (1mg normalized)")
+ax.plot(ev_x, cumtrapz(ev(ev_x), x=ev_x, initial=0.0), label="Estradiol Valerate (1mg)")
 ax.legend()
 
 print(f"EC AUC = {simps(ec(ec_x), x=ec_x)} pg-days/mL")
 print(f"EV AUC = {simps(ev(ev_x), x=ev_x)} pg-days/mL")
+print(f"EC AUC (calibrated) = {simps(ec_cal(ec_x), x=ec_x)} pg-days/mL")
+print(f"EV AUC (calibrated) = {simps(ev_cal(ev_x), x=ev_x)} pg-days/mL")
 ```
 
 ## Depot effects of injection frequencies
 
 ```python
 fig,ax = pharma.startPlot()
-ax.set_title('Chronic Estradiol Cypionate Levels (1.0 mg/injection, 37 day tail)')
-ax.set_ylim(bottom=0, top=500)
-ax.set_yticks(range(0, 501, 50))
-ax.plot(medications.ec_level_1mg[:,0], medications.ec_level_1mg[:,1], 'o')
+ax.set_title('Chronic Estradiol Cypionate Levels (1.0 mg/injection')
+ax.set_ylim(bottom=0, top=250)
+ax.set_yticks(range(0, 251, 50))
+#ax.plot(medications.ec_level_1mg[:,0], medications.ec_level_1mg[:,1], 'o')
 pharma.plotDosesFrequencies(
     fig, ax,
-    medications.ef_ec_1mg,
+    medications.ef_ec,
     sim_time=63.0,
-    sim_freq='6H',
-    dose_freqs=['2.0D', '3.0D', '4.0D'])
+    sim_freq='3H',
+    dose_freqs=['2.0D', '3.0D', '4.0D', '5.0D', '7.0D', '9.0D', '14.0D', '28.0D'])
 
 # Steady level ~= integral(inj_func) / inj_freq
-from scipy.integrate import simps
-print(simps(medications.ec_level_1mg[:,1], x=medications.ec_level_1mg[:,0]))
-print(simps(medications.ec_level_5mg[:,1], x=medications.ec_level_5mg[:,0]))
-print(simps(medications.ev_level_5mg[:,1], x=medications.ev_level_5mg[:,0]))
+#from scipy.integrate import simps
+#print(simps(medications.ec_level_1mg[:,1], x=medications.ec_level_1mg[:,0]))
+#print(simps(medications.ec_level_5mg[:,1], x=medications.ec_level_5mg[:,0]))
+#print(simps(medications.ev_level_5mg[:,1], x=medications.ev_level_5mg[:,0]))
 
 fig,ax = pharma.startPlot()
-ax.set_title('Chronic Estradiol Cypionate Derivatives (1.0 mg/injection, 37 day tail)')
+ax.set_title('Chronic Estradiol Cypionate Derivatives (1.0 mg/injection)')
 ax.set_ylim(bottom=-20, top=40)
 ax.set_yticks(range(-20, 41, 5))
 # The derivative of a sum is equal to the sum of the derivatives!
 pharma.plotDosesFrequencies(
     fig, ax,
-    lambda T: derivative(medications.ef_ec_1mg, T, dx=1e-6),
+    lambda T: derivative(medications.ef_ec, T, dx=1e-6),
     sim_time=40.0,
     sim_freq='1H',
     dose_freqs=['2.0D', '3.0D', '4.0D'])
@@ -164,27 +170,13 @@ pharma.plotDosesFrequencies(
 
 ```python
 fig,ax = pharma.startPlot()
-ax.set_title('Chronic Estradiol Cypionate Levels (5.0 mg/injection, 24 day tail)')
-ax.set_ylim(bottom=0, top=1250)
-ax.set_yticks(range(0, 1251, 50))
-ax.plot(medications.ec_level_5mg[:,0], medications.ec_level_5mg[:,1], 'o')
+ax.set_title('Chronic Estradiol Valerate Levels (1.0 mg/injection, 21 day tail)')
+ax.set_ylim(bottom=0, top=300)
+ax.set_yticks(range(0, 301, 50))
+#ax.plot(medications.ev_level_5mg[:,0], medications.ev_level_5mg[:,1], 'o')
 pharma.plotDosesFrequencies(
     fig, ax,
-    medications.ef_ec_5mg,
-    sim_time=42.0,
-    sim_freq='3H',
-    dose_freqs=['2.0D', '3.0D', '4.0D', '5.0D', '7.0D', '9.0D', '14.0D', '28.0D'])
-```
-
-```python
-fig,ax = pharma.startPlot()
-ax.set_title('Chronic Estradiol Valerate Levels (5.0 mg/injection, 21 day tail)')
-ax.set_ylim(bottom=0, top=1700)
-ax.set_yticks(range(0, 1701, 50))
-ax.plot(medications.ev_level_5mg[:,0], medications.ev_level_5mg[:,1], 'o')
-pharma.plotDosesFrequencies(
-    fig, ax,
-    medications.ef_ev_5mg,
+    medications.ef_ev,
     sim_time=42.0,
     sim_freq='3H',
     dose_freqs=['1.5D', '2.0D', '3.0D', '4.0D', '5.0D', '7.0D', '14.0D'][::-1])
