@@ -1,33 +1,6 @@
-import numpy as np
 import pandas as pd
 
-from transkit import pharma
-
-##############
-### Models ###
-
-
-def cmpt3(t, D, k1, k2, k3):
-    k1t = np.clip(-k1 * t, None, 300.0)
-    k2t = np.clip(-k2 * t, None, 300.0)
-    k3t = np.clip(-k3 * t, None, 300.0)
-
-    C_num = (
-        D
-        * k1
-        * k2
-        * (
-            (k2 - k3) * np.exp(k1t)
-            + (k3 - k1) * np.exp(k2t)
-            + (k1 - k2) * np.exp(k3t)
-        )
-    )
-    C_den = (k1 - k2) * (k1 - k3) * (k2 - k3)
-
-    if C_den != 0:
-        return C_num / C_den
-    else:
-        return 1e20
+from transkit import models, pharma
 
 
 ##########################################
@@ -45,7 +18,7 @@ zero_dose.domain = (
 
 
 def ef_ec(t):
-    return cmpt3(
+    return models.Cmpt3VModel().model(
         t,
         47.8110240,
         1.75321309,
@@ -61,7 +34,7 @@ ef_ec.domain = (
 
 
 def ef_ev(t):
-    return cmpt3(
+    return models.Cmpt3VModel().model(
         t,
         91.5928578,
         0.92440910,
