@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from transkit import pharma
 
 ##############
 ### Models ###
@@ -55,7 +56,7 @@ def ef_ec(t):
 
 ef_ec.domain = (
     pd.to_timedelta(0.0, unit="D"),
-    pd.to_timedelta(90.0, unit="D"),
+    pd.to_timedelta(pharma.findDecayToZero(ef_ec), unit="D"),
 )
 
 
@@ -71,7 +72,7 @@ def ef_ev(t):
 
 ef_ev.domain = (
     pd.to_timedelta(0.0, unit="D"),
-    pd.to_timedelta(90.0, unit="D"),
+    pd.to_timedelta(pharma.findDecayToZero(ef_ev), unit="D"),
 )
 
 

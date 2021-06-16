@@ -9,6 +9,8 @@ from matplotlib.colors import Normalize
 import numpy as np
 import pandas as pd
 from scipy import signal
+from scipy.misc import derivative
+from scipy.optimize import root_scalar
 from scipy.stats import mode
 import warnings
 
@@ -659,6 +661,31 @@ def calibratedDoseResponse(ef, X):
 
     ef_cali.domain = ef.domain if hasattr(ef, "domain") else None
     return ef_cali
+
+
+def findDecayToZero(ef, tol=0.001):
+    """
+    Find the time at which an exponentially decaying dose response
+    function ef reaches approximately 0, within a specificed tolerance.
+    """
+
+    # First, find where the function reaches its maximum and starts
+    # descending towards zero. We don't want the root that could be
+    # at 0, but we don't know where the peak is, so we assume that
+    # any medication will have decayed after a year.
+    max_root = root_scalar(
+        lambda T: derivative(ef, T, dx=1e-6), bracket=(0.01, 365.0)
+    )
+    if not max_root.converged:
+        raise RuntimeError("uh oh, couldn't figure out where the peak is")
+
+    # Now, find where the function decays to the specified tolerance
+    # after its peak.
+    root = root_scalar(lambda T: ef(T) - tol, bracket=(max_root.root, 365.0))
+    if not root.converged:
+        raise RuntimeError("uh oh, couldn't figure out where ef decays to 0")
+
+    return root.root
 
 
 ################
