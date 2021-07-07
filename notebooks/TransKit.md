@@ -53,7 +53,7 @@ _, ts_ec_cali = fit.calibrateDoseResponse_lsqpoly(
     ts_estradiol_measurements)
 
 calibrated_medications = dict(medications.medications)
-calibrated_medications["ec"] = medications.calibratedDoseResponse(
+calibrated_medications["ec"] = pharma.calibratedDoseResponse(
     calibrated_medications["ec"],
     ts_ec_cali)
 

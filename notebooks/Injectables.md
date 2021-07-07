@@ -181,7 +181,3 @@ pharma.plotDosesFrequencies(
     sim_freq='3H',
     dose_freqs=['1.5D', '2.0D', '3.0D', '4.0D', '5.0D', '7.0D', '14.0D'][::-1])
 ```
-
-```python
-
-```
