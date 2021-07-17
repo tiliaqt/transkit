@@ -1,5 +1,9 @@
 # TransKit
 
+TransKit is a pharmacokinetic simulation library specifically tailored for transgender hormone therapy. It provides a set of low level tools that transgender people can use to understand, manage, and control their hormonal transitions. It is one component of [Tilia](https://github.com/tiliaqt), and is designed as an open source library that can be used by other projects supporting the transgender community. In its current state it should be considered experimental, but already contains a number of tools that can be useful (and have been useful to the author).
+
+Currently the easiest way to access this library is through a Jupyter Notebook, documented below.
+
 ## Setup
 
 All dependencies are handled using [Poetry](https://python-poetry.org/), and are specified in the project's `pyproject.toml` file.
@@ -9,7 +13,7 @@ All the dependencies you need to work with these notebooks will be installed in 
 > poetry install -D
 ```
 
-If you don't want to follow steps, you can also run the `./tools/install.sh` script.
+If you don't want to follow the steps manually, you can also run the `./tools/install.sh` script.
 
 ## Usage
 
