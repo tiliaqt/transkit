@@ -37,9 +37,7 @@ for i in range(len(injs)):
     print(f'    ["{date}", {dose}, "{inj[2]}"],')
 print("]")
 
-print(
-    """estradiol_measurements = [
+print("""estradiol_measurements = [
     ["2020.Apr.22.1400", 85.0, "eclia"],
     ["2020.Jul.15.1330", 205.0, "eclia"],
-]"""
-)
+]""")
