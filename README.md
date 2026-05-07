@@ -10,7 +10,7 @@ All dependencies are handled using [Poetry](https://python-poetry.org/), and are
 All the dependencies you need to work with these notebooks will be installed in a virtualenv specifically for this project using:
 
 ```
-> poetry install -D
+> poetry install
 ```
 
 If you don't want to follow the steps manually, you can also run the `./tools/install.sh` script.
