@@ -5,10 +5,10 @@ jupyter:
     text_representation:
       extension: .md
       format_name: markdown
-      format_version: '1.2'
-      jupytext_version: 1.7.1
+      format_version: '1.3'
+      jupytext_version: 1.19.1
   kernelspec:
-    display_name: Python 3
+    display_name: Python 3 (ipykernel)
     language: python
     name: python3
 ---
@@ -74,7 +74,7 @@ Using your own steady-state blood work you can calibrate these curves and use th
 
 from matplotlib import pyplot as plt
 import numpy as np
-from scipy.misc import derivative
+from scipy.stats._finite_differences import _derivative as derivative
 import sys
 
 sys.path.insert(0, "../")
@@ -97,7 +97,7 @@ calibrated_medications["ev"] = pharma.calibratedDoseResponse(
 ## Injection Curves
 
 ```python
-from scipy.integrate import simps, cumtrapz
+from scipy.integrate import simpson, cumulative_trapezoid
 
 ec = medications.medications["ec"]
 ec_cal = calibrated_medications["ec"]
@@ -124,14 +124,14 @@ ax.legend()
 
 fig,ax = pharma.startPlot()
 ax.set_title("Cumulative Concentration-time Curves")
-ax.plot(ec_x, cumtrapz(ec(ec_x), x=ec_x, initial=0.0), label="Estradiol Cypionate (1mg)")
-ax.plot(ev_x, cumtrapz(ev(ev_x), x=ev_x, initial=0.0), label="Estradiol Valerate (1mg)")
+ax.plot(ec_x, cumulative_trapezoid(ec(ec_x), x=ec_x, initial=0.0), label="Estradiol Cypionate (1mg)")
+ax.plot(ev_x, cumulative_trapezoid(ev(ev_x), x=ev_x, initial=0.0), label="Estradiol Valerate (1mg)")
 ax.legend()
 
-print(f"EC AUC = {simps(ec(ec_x), x=ec_x)} pg-days/mL")
-print(f"EV AUC = {simps(ev(ev_x), x=ev_x)} pg-days/mL")
-print(f"EC AUC (calibrated) = {simps(ec_cal(ec_x), x=ec_x)} pg-days/mL")
-print(f"EV AUC (calibrated) = {simps(ev_cal(ev_x), x=ev_x)} pg-days/mL")
+print(f"EC AUC = {simpson(ec(ec_x), x=ec_x)} pg-days/mL")
+print(f"EV AUC = {simpson(ev(ev_x), x=ev_x)} pg-days/mL")
+print(f"EC AUC (calibrated) = {simpson(ec_cal(ec_x), x=ec_x)} pg-days/mL")
+print(f"EV AUC (calibrated) = {simpson(ev_cal(ev_x), x=ev_x)} pg-days/mL")
 ```
 
 ## Depot effects of injection frequencies
@@ -146,7 +146,7 @@ pharma.plotDosesFrequencies(
     fig, ax,
     medications.ef_ec,
     sim_time=63.0,
-    sim_freq='3H',
+    sim_freq='3h',
     dose_freqs=['2.0D', '3.0D', '4.0D', '5.0D', '7.0D', '9.0D', '14.0D', '28.0D'])
 
 # Steady level ~= integral(inj_func) / inj_freq
@@ -164,7 +164,7 @@ pharma.plotDosesFrequencies(
     fig, ax,
     lambda T: derivative(medications.ef_ec, T, dx=1e-6),
     sim_time=40.0,
-    sim_freq='1H',
+    sim_freq='1h',
     dose_freqs=['2.0D', '3.0D', '4.0D'])
 ```
 
@@ -178,6 +178,6 @@ pharma.plotDosesFrequencies(
     fig, ax,
     medications.ef_ev,
     sim_time=42.0,
-    sim_freq='3H',
+    sim_freq='3h',
     dose_freqs=['1.5D', '2.0D', '3.0D', '4.0D', '5.0D', '7.0D', '14.0D'][::-1])
 ```

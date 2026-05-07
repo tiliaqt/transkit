@@ -116,9 +116,6 @@ def doses_12doses_5days(simple_meds):
     return (doses, actual_levels)
 
 
-@pytest.mark.filterwarnings(
-    "ignore:Creating an ndarray from ragged:numpy.VisibleDeprecationWarning"
-)
 def test_create_doses():
     empty = pharma.createDoses([])
     assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
@@ -135,7 +132,7 @@ def test_create_doses():
     assert len(one) == 1 and one.shape[0] == 1 and one.shape[1] == 2
     one = pharma.createDoses(np.array([["2020", 1, "med"]]))
     assert len(one) == 1 and one.shape[0] == 1 and one.shape[1] == 2
-    assert one.dtypes[0] == np.float64 and one.dtypes[1] == np.object
+    assert one.dtypes.iloc[0] == np.float64 and one.dtypes.iloc[1] == object
 
     with pytest.raises(ValueError):
         pharma.createDoses(["2020", 1, "med"])  # Require 2D
@@ -161,12 +158,11 @@ def test_create_doses():
     )
     doses = pharma.createDoses(arr)
     assert len(doses) == 5 and doses.shape[0] == 5 and doses.shape[1] == 2
-    assert doses.dtypes[0] == np.float64 and doses.dtypes[1] == np.object
+    assert (
+        doses.dtypes.iloc[0] == np.float64 and doses.dtypes.iloc[1] == object
+    )
 
 
-@pytest.mark.filterwarnings(
-    "ignore:Creating an ndarray from ragged:numpy.VisibleDeprecationWarning"
-)
 def test_create_measurements():
     empty = pharma.createMeasurements([])
     assert len(empty) == 0 and empty.shape[0] == 0 and empty.shape[1] == 2
@@ -183,7 +179,7 @@ def test_create_measurements():
     assert len(one) == 1 and one.shape[0] == 1 and one.shape[1] == 2
     one = pharma.createMeasurements(np.array([["2020", 1, "med"]]))
     assert len(one) == 1 and one.shape[0] == 1 and one.shape[1] == 2
-    assert one.dtypes[0] == np.float64 and one.dtypes[1] == np.object
+    assert one.dtypes.iloc[0] == np.float64 and one.dtypes.iloc[1] == object
 
     with pytest.raises(ValueError):
         pharma.createMeasurements(["2020", 1, "med"])  # Require 2D
@@ -214,8 +210,8 @@ def test_create_measurements():
         and measurements.shape[1] == 2
     )
     assert (
-        measurements.dtypes[0] == np.float64
-        and measurements.dtypes[1] == np.object
+        measurements.dtypes.iloc[0] == np.float64
+        and measurements.dtypes.iloc[1] == object
     )
 
 

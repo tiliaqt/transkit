@@ -5,10 +5,10 @@ jupyter:
     text_representation:
       extension: .md
       format_name: markdown
-      format_version: '1.2'
-      jupytext_version: 1.7.1
+      format_version: '1.3'
+      jupytext_version: 1.19.1
   kernelspec:
-    display_name: Python 3
+    display_name: Python 3 (ipykernel)
     language: python
     name: python3
 ---
@@ -163,7 +163,7 @@ It's a loading dose! This demonstrates the control theory intuition that, if des
 ```python
 step_func = lambda T: int(T>=pd.to_datetime('1970-02-01')) * (250.0) +\
                        int(T<pd.to_datetime('1970-02-01'))  * (100.0)
-step_target_x = pd.date_range(0, pd.to_datetime(62.0, unit='D'), freq='12H')
+step_target_x = pd.date_range(0, pd.to_datetime(62.0, unit='D'), freq='12h')
 step_target_y = np.array([step_func(T) for T in step_target_x])
 
 step_target = pd.Series(step_target_y, index=step_target_x)
@@ -204,7 +204,7 @@ cycling_start_t = 42.0 # days
 sine_target_func = lambda T: int(T>=cycling_start_t) * (250.0 + 50.0*np.sin((2*math.pi/30)*(T-cycling_start_t))) +\
                              int(T<cycling_start_t)  * (250.0)
 sine_start_t = pd.to_datetime("2020")
-sine_target_x = pd.date_range(sine_start_t, sine_start_t + pd.to_timedelta(90.0, unit='D'), freq='18H')
+sine_target_x = pd.date_range(sine_start_t, sine_start_t + pd.to_timedelta(90.0, unit='D'), freq='18h')
 sine_target_y = np.array([sine_target_func(pharma.timeDeltaToDays(T - sine_target_x[0])) for T in sine_target_x])
 
 sine_target = pd.Series(sine_target_y, index=sine_target_x)

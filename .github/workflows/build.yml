@@ -7,9 +7,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.6, 3.7, 3.8]
-        poetry-version: [1.1.4]
-        os: [ubuntu-18.04]
+        python-version: [3.11, 3.12, 3.13, 3.14]
+        poetry-version: [2.2.1]
+        os: [Ubuntu, MacOS]
 
     steps:
       - uses: actions/checkout@v2

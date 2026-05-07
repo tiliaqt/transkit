@@ -9,11 +9,10 @@ from matplotlib.colors import Normalize
 import numpy as np
 import pandas as pd
 from scipy import signal
-from scipy.misc import derivative
+from scipy.stats._finite_differences import _derivative as derivative
 from scipy.optimize import root_scalar
 from scipy.stats import mode
 import warnings
-
 
 medication_markers = defaultdict(
     lambda: "2",
@@ -42,7 +41,7 @@ def dateTimeToDays(dt):
 
 def timeDeltaToDays(td):
     if isinstance(td, pd.TimedeltaIndex) or isinstance(td, pd.Timedelta):
-        td = td.to_numpy(dtype="timedelta64[ns]")
+        td = td.to_numpy()
 
     return (
         td.astype("timedelta64[ns]").astype(np.float64)
@@ -130,7 +129,7 @@ def createDoses(dose_array, date_format=None, date_unit="ns"):
             freq="infer",
         ),
         columns=["dose", "medication"],
-    ).astype({"dose": np.float64, "medication": np.object})
+    ).astype({"dose": np.float64, "medication": object})
     return df
 
 
@@ -187,7 +186,7 @@ def createMeasurements(measurements_array, date_format=None, date_unit="ns"):
             freq="infer",
         ),
         columns=["value", "method"],
-    ).astype({"value": np.float64, "method": np.object})
+    ).astype({"value": np.float64, "method": object})
     return df
 
 
@@ -374,9 +373,11 @@ def zeroLevelsFromDoses(
 
         n = 1 if ub_param is None else ub_param
         interval = np.max(
-            mode((doses.index[1:] - doses.index[:-1]).round("1D")).mode
+            mode(
+                (doses.index[1:] - doses.index[:-1]).round("1D").astype(int)
+            ).mode
         )
-        end_time = doses.index[-1] + n * interval
+        end_time = doses.index[-1] + n * pd.to_timedelta(interval, unit="ns")
     elif ub_method == "domain":
         if ub_param is None:
             raise ValueError(
@@ -410,7 +411,7 @@ def zeroLevelsFromDoses(
     freq_offset = pd.tseries.frequencies.to_offset(sample_freq)
     freq_sec = freq_offset.nanos * 1e-9
     if (end_time - start_time).total_seconds() % freq_sec != 0:
-        end_time = freq_offset.apply(end_time)
+        end_time = freq_offset.rollforward(end_time)
 
     dates = pd.date_range(start_time, end_time, freq=sample_freq)
     return pd.Series(np.zeros(len(dates)), index=dates)

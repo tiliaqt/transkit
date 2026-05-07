@@ -5,7 +5,7 @@ from matplotlib import collections as mc
 from matplotlib import dates as mdates
 import numpy as np
 import pandas as pd
-from scipy.integrate import simps
+from scipy.integrate import simpson
 from scipy.interpolate import interp1d
 from scipy.optimize import least_squares, root_scalar
 from typing import Callable, Iterable, Optional
@@ -13,7 +13,6 @@ import warnings
 
 
 from transkit import pharma
-
 
 ###################################################
 ### Fitting pharmacokinetic models to dose data ###
@@ -592,7 +591,7 @@ def returnToSteady(
         pharma.timeDeltaToDays(med.domain[1]),
         1000,
     )
-    c_ss = simps(steady_amount * med(med_x), x=med_x) / interval_days
+    c_ss = simpson(steady_amount * med(med_x), x=med_x) / interval_days
     c_trough = np.sum(
         steady_amount
         * med(
@@ -757,7 +756,7 @@ def returnToSteady(
             ].index
         ]
 
-        fit_ss = pharma.zeroLevelsFromDoses(new_doses, "12H")
+        fit_ss = pharma.zeroLevelsFromDoses(new_doses, "12h")
         fit_ss.values[:] += c_ss
         fit_run = initializeFit(
             new_doses,
@@ -804,7 +803,7 @@ def plotOptimizationRun(fig, ax, run):
         ax,
         run["doses_init"],
         run["medications_map"],
-        sample_freq="6H",
+        sample_freq="6h",
         label="Initial condition",
     )
     pharma.plotDoses(
@@ -812,7 +811,7 @@ def plotOptimizationRun(fig, ax, run):
         ax,
         run["doses_optim"],
         run["medications_map"],
-        sample_freq="6H",
+        sample_freq="6h",
         label="Optimized solution",
     )
 
